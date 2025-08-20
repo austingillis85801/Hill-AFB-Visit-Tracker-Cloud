@@ -1,0 +1,541 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hill AFB Visit Tracker (Cloud Sync)</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="VisitTracker">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta name="theme-color" content="#1f6feb">
+  <style>
+    :root {
+      --bg: #f7f7fb;
+      --card: #ffffff;
+      --text: #222;
+      --muted: #666;
+      --border: #e5e5ef;
+      --green: #26a269;
+      --yellow: #e5a50a;
+      --red: #c01c28;
+      --blue: #1f6feb;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      background: var(--bg); color: var(--text);
+    }
+    header {
+      position: sticky; top: 0; z-index: 5;
+      background: linear-gradient(180deg, var(--blue), color-mix(in srgb, var(--blue) 80%, white));
+      color: #fff;
+      border-bottom: 1px solid var(--border);
+      padding: 12px 16px; display: flex; align-items: center; gap: 12px;
+    }
+    header h1 { font-size: 18px; margin: 0; }
+    header .muted { color: #e6eeff; }
+    main { padding: 16px; max-width: 1100px; margin: 0 auto; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    button, select, input, textarea {
+      font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: #fff; color: var(--text);
+    }
+    button.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+    button.danger { background: var(--red); color: #fff; border-color: var(--red); }
+    button.ghost { background: transparent; color: #fff; border-color: #fff; border: 1px solid rgba(255,255,255,.4); }
+    .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 12px; }
+    .col-4 { grid-column: span 4; } .col-6 { grid-column: span 6; } .col-8 { grid-column: span 8; } .col-12 { grid-column: span 12; }
+    .card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+      padding: 14px; box-shadow: 0 1px 2px rgba(0,0,0,.03);
+    }
+    .card h3 { margin: 0 0 4px 0; font-size: 16px; }
+    .muted { color: var(--muted); font-size: 12px; }
+    .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .status-dot { width: 10px; height: 10px; border-radius: 10px; display: inline-block; }
+    .green { background: var(--green); } .yellow { background: var(--yellow); } .red { background: var(--red); }
+    .section-title { margin: 20px 0 8px; font-weight: 700; }
+    label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+    input[type="date"] { min-width: 0; }
+    .right { margin-left: auto; }
+    .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); background: #fff; }
+    .pill.red { border-color: var(--red); color: var(--red); } .pill.yellow { border-color: var(--yellow); color: var(--yellow); } .pill.green { border-color: var(--green); color: var(--green); }
+    .nowrap { white-space: nowrap; }
+    .hidden { display:none !important; }
+    .footer { margin-top: 24px; color: var(--muted); font-size: 12px; }
+    .authbar { display:flex; gap:8px; align-items:center; margin-left:auto; }
+    .authbar input { border-color: rgba(255,255,255,.5); background: rgba(255,255,255,.1); color:#fff; }
+    .authbar input::placeholder { color:#eef; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Hill AFB Visit Tracker (Cloud Sync)</h1>
+    <span class="muted">Cloud sync • Offline • Local cache</span>
+    <div class="right row authbar" id="authbar-unauthed">
+      <input id="auth-email" placeholder="email" autocapitalize="off">
+      <input id="auth-pass" placeholder="password" type="password">
+      <button id="btn-signin" class="ghost">Sign in</button>
+      <button id="btn-signup" class="ghost">Create</button>
+    </div>
+    <div class="right row authbar hidden" id="authbar-authed">
+      <span id="whoami" class="muted"></span>
+      <button id="btn-signout" class="ghost">Sign out</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="view-today">
+      <div class="toolbar">
+        <input id="search" placeholder="Search name/org/location…" style="flex:1">
+        <select id="filter-status">
+          <option value="all">All statuses</option>
+          <option value="red">Past due</option>
+          <option value="yellow">Due this week</option>
+          <option value="green">Not due</option>
+        </select>
+        <button id="btn-add-quick" class="primary">+ Quick add</button>
+      </div>
+      <div id="today-list" class="grid"></div>
+      <div class="footer">Status rules: <span class="pill red">Past due</span> ≤ today • <span class="pill yellow">Due this week</span> within 7 days • <span class="pill green">Not due</span> &gt; 7 days.</div>
+    </section>
+
+    <section id="view-contacts" class="hidden">
+      <div class="grid">
+        <div class="col-6 card">
+          <h3 id="form-title">Add Contact</h3>
+          <form id="contact-form">
+            <input type="hidden" id="contact-id">
+            <div class="grid">
+              <div class="col-6"><label>Name</label><input id="name" required></div>
+              <div class="col-6"><label>Org</label><input id="org"></div>
+              <div class="col-12"><label>Location</label><input id="location"></div>
+              <div class="col-6"><label>Email</label><input id="email" type="email"></div>
+              <div class="col-6"><label>Phone</label><input id="phone"></div>
+              <div class="col-6"><label>Frequency</label>
+                <select id="frequency">
+                  <option>Weekly</option><option>Biweekly</option><option selected>Monthly</option><option>Quarterly</option><option>Custom</option>
+                </select>
+              </div>
+              <div class="col-6"><label>Frequency (days)</label><input id="freqDays" type="number" min="1" value="30"></div>
+              <div class="col-6"><label>Last Visit</label><input id="lastVisit" type="date"></div>
+              <div class="col-6"><label>Active</label>
+                <select id="active"><option value="true" selected>Yes</option><option value="false">No</option></select>
+              </div>
+              <div class="col-12"><label>Notes</label><textarea id="notes" rows="3"></textarea></div>
+              <div class="col-12 row">
+                <button class="primary" type="submit" id="btn-save-contact">Save</button>
+                <button type="button" id="btn-reset">Reset</button>
+                <span class="right muted">Tip: set Frequency to Custom for exact days.</span>
+              </div>
+            </div>
+          </form>
+        </div>
+        <div class="col-6">
+          <div class="toolbar"><input id="contact-search" placeholder="Search contacts…" style="flex:1"></div>
+          <div id="contact-list" class="grid"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-log" class="hidden">
+      <div class="grid">
+        <div class="col-4 card">
+          <h3>Log Visit</h3>
+          <form id="visit-form">
+            <div><label>Contact</label><select id="visit-contact" required></select></div>
+            <div class="grid">
+              <div class="col-6"><label>Visit Date</label><input id="visit-date" type="datetime-local"></div>
+              <div class="col-6"><label>Outcome</label>
+                <select id="visit-outcome">
+                  <option>Discovery</option><option>Follow-up</option><option>Quote Sent</option>
+                  <option>Closed Won</option><option>Closed Lost</option><option>Other</option>
+                </select>
+              </div>
+              <div class="col-12"><label>Notes</label><textarea id="visit-notes" rows="4"></textarea></div>
+              <div class="col-12"><label>Next Steps</label><input id="visit-next"></div>
+              <div class="col-12"><label>Created By</label><input id="visit-createdBy" placeholder="GAR name or email"></div>
+            </div>
+            <div class="row" style="margin-top:8px">
+              <button class="primary" type="submit">Save Visit</button>
+              <button type="button" id="btn-quick-today">Mark as seen now</button>
+            </div>
+          </form>
+        </div>
+        <div class="col-8">
+          <div class="toolbar"><input id="visit-search" placeholder="Search visits…" style="flex:1"></div>
+          <div id="visit-list" class="grid"></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="footer">
+      Sign in (top-right) to enable sync across devices. Works offline; changes sync when back online. Export/Import still available for manual backup.
+    </div>
+  </main>
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('sw.js');
+  });
+}
+</script>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, enableIndexedDbPersistence, collection, addDoc, setDoc, doc, getDocs, getDoc, query, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+// Paste your Firebase config here
+const firebaseConfig = {
+  apiKey: "<YOUR_API_KEY>",
+  authDomain: "<YOUR_PROJECT_ID>.firebaseapp.com",
+  projectId: "<YOUR_PROJECT_ID>",
+  storageBucket: "<YOUR_PROJECT_ID>.appspot.com",
+  messagingSenderId: "<SENDER_ID>",
+  appId: "<APP_ID>"
+};
+
+const $ = (sel) => document.querySelector(sel);
+
+// Cloud init
+let app, auth, db, user;
+
+function validConfig(cfg) {
+  return cfg.apiKey && !cfg.apiKey.includes("YOUR_API_KEY");
+}
+
+async function initCloud() {
+  if (!validConfig(firebaseConfig)) return false;
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+  try { await enableIndexedDbPersistence(db); } catch (e) { /* already enabled or private mode */ }
+  onAuthStateChanged(auth, (u) => {
+    user = u || null;
+    updateAuthUI();
+    if (user) { subscribeRealtime(); loadAllAndRender(); }
+    else { clearUI(); }
+  });
+  return true;
+}
+
+// Firestore wrappers
+function colPath(store) { return `users/${user.uid}/${store}`; }
+
+async function add(store, value) {
+  if (!user) throw new Error("Sign in first");
+  const ref = await addDoc(collection(db, colPath(store)), value);
+  await setDoc(ref, { ...value, id: ref.id }, { merge: true });
+  return ref.id;
+}
+async function put(store, value) {
+  if (!user) throw new Error("Sign in first");
+  const id = value.id || (await add(store, value));
+  if (!value.id) return id;
+  const ref = doc(db, colPath(store), id);
+  await setDoc(ref, value, { merge: true });
+  return id;
+}
+async function getAll(store) {
+  if (!user) return [];
+  const snap = await getDocs(query(collection(db, colPath(store))));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+async function getByKey(store, id) {
+  const ref = doc(db, colPath(store), id);
+  const snap = await getDoc(ref);
+  return snap.exists() ? ({ id: snap.id, ...snap.data() }) : null;
+}
+
+// Helpers & UI logic
+function fmtDate(date){ if(!date) return ""; const d=new Date(date); return d.toLocaleDateString()+" "+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); }
+function fmtDateOnly(date){ if(!date) return ""; const d=new Date(date); return d.toISOString().slice(0,10); }
+function dateAddDays(date, days){ const d=new Date(date||new Date()); d.setHours(0,0,0,0); d.setDate(d.getDate()+Number(days||0)); return d; }
+function defaultDays(freq, fallback=30){ switch(freq){case "Weekly":return 7;case "Biweekly":return 14;case "Monthly":return 30;case "Quarterly":return 90;default:return fallback;} }
+function computeStatus(contact){
+  const last = contact.lastVisit ? new Date(contact.lastVisit) : null;
+  const days = contact.freqDays || defaultDays(contact.frequency, 30);
+  const nextDue = last ? dateAddDays(last, days) : new Date();
+  const today = new Date(); today.setHours(0,0,0,0);
+  const diff = Math.floor((nextDue - today)/(1000*60*60*24));
+  let status = "red"; if(last){ status = diff<=0 ? "red" : diff<=7 ? "yellow" : "green"; }
+  return { nextDue, diffDays: diff, status };
+}
+
+async function renderToday(){
+  const q = document.getElementById("search").value.toLowerCase().trim();
+  const statusFilter = document.getElementById("filter-status").value;
+  const contacts = (await getAll("contacts")).filter(c => c.active !== false);
+  const enriched = contacts.map(c => ({...c, ...computeStatus(c)})).filter(c => {
+    const hay = (c.name+" "+(c.org||"")+" "+(c.location||"")).toLowerCase();
+    const matchQ = !q || hay.includes(q);
+    const matchS = statusFilter === "all" || c.status === statusFilter;
+    return matchQ && matchS;
+  }).sort((a,b)=>{
+    const score = s => s==="red"?3:s==="yellow"?2:1;
+    const s = score(b.status)-score(a.status);
+    if(s!==0) return s;
+    const d = a.diffDays - b.diffDays; if(d!==0) return d;
+    return (a.name||"").localeCompare(b.name||"");
+  });
+  const host = document.getElementById("today-list"); host.innerHTML="";
+  enriched.forEach(c=>{
+    const wrap=document.createElement("div"); wrap.className="col-4";
+    wrap.innerHTML=`
+      <div class="card">
+        <div class="row" style="justify-content:space-between">
+          <h3>${c.name||""}</h3>
+          <span class="status-dot ${c.status}"></span>
+        </div>
+        <div class="muted">${c.org||""}${c.org&&c.location?" • ":""}${c.location||""}</div>
+        <div class="row" style="margin:6px 0">
+          <span class="pill ${c.status}">${c.status==="red"?"Past due":c.status==="yellow"?"Due this week":"Not due"}</span>
+          <span class="pill">Next due: ${fmtDateOnly(c.nextDue)}</span>
+          <span class="pill">Freq: ${c.frequency}${c.frequency==="Custom"?` (${c.freqDays}d)`:""}</span>
+        </div>
+        <div class="row">
+          <button data-id="${c.id}" class="btn-log-now">Log visit</button>
+          <button data-id="${c.id}" class="btn-edit">Edit</button>
+          <button data-id="${c.id}" class="btn-mark-inactive">Archive</button>
+        </div>
+      </div>`;
+    host.appendChild(wrap);
+  });
+  host.querySelectorAll(".btn-edit").forEach(btn=>btn.addEventListener("click", async e => {
+    const id = e.currentTarget.getAttribute("data-id");
+    const c = await getByKey("contacts", id);
+    showSection("view-contacts");
+    populateContactForm(c);
+  }));
+  host.querySelectorAll(".btn-log-now").forEach(btn=>btn.addEventListener("click", async e => {
+    const id = e.currentTarget.getAttribute("data-id");
+    const c = await getByKey("contacts", id);
+    await logVisitNow(c);
+  }));
+  host.querySelectorAll(".btn-mark-inactive").forEach(btn=>btn.addEventListener("click", async e => {
+    const id = e.currentTarget.getAttribute("data-id");
+    const c = await getByKey("contacts", id);
+    c.active = false; await put("contacts", c); renderToday();
+  }));
+}
+function populateContactForm(c){
+  document.getElementById("form-title").textContent = c?.id ? "Edit Contact" : "Add Contact";
+  document.getElementById("contact-id").value = c?.id || "";
+  document.getElementById("name").value = c?.name || "";
+  document.getElementById("org").value = c?.org || "";
+  document.getElementById("location").value = c?.location || "";
+  document.getElementById("email").value = c?.email || "";
+  document.getElementById("phone").value = c?.phone || "";
+  document.getElementById("frequency").value = c?.frequency || "Monthly";
+  document.getElementById("freqDays").value = c?.freqDays || ({"Weekly":7,"Biweekly":14,"Monthly":30,"Quarterly":90}[document.getElementById("frequency").value]||30);
+  document.getElementById("lastVisit").value = c?.lastVisit ? fmtDateOnly(c.lastVisit) : "";
+  document.getElementById("active").value = (c?.active ?? true) ? "true" : "false";
+  document.getElementById("notes").value = c?.notes || "";
+}
+async function renderContactsList(){
+  const q = document.getElementById("contact-search").value.toLowerCase().trim();
+  const contacts = (await getAll("contacts")).filter(c=>c.active!==false).sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+  const host = document.getElementById("contact-list"); host.innerHTML="";
+  contacts.filter(c=>{
+    const hay=(c.name+" "+(c.org||"")+" "+(c.location||"")).toLowerCase();
+    return !q || hay.includes(q);
+  }).forEach(c=>{
+    const cmp = computeStatus(c);
+    const div=document.createElement("div"); div.className="col-12";
+    div.innerHTML=`
+      <div class="card">
+        <div class="row" style="justify-content:space-between">
+          <div>
+            <h3>${c.name||""}</h3>
+            <div class="muted">${c.org||""}${c.org&&c.location?" • ":""}${c.location||""}</div>
+          </div>
+          <div class="row">
+            <span class="pill ${cmp.status}">${cmp.status==="red"?"Past due":cmp.status==="yellow"?"Due this week":"Not due"}</span>
+            <span class="pill">Next due: ${fmtDateOnly(cmp.nextDue)}</span>
+          </div>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button data-id="${c.id}" class="btn-edit">Edit</button>
+          <button data-id="${c.id}" class="btn-log-now">Log visit</button>
+          <button data-id="${c.id}" class="btn-archive danger">Archive</button>
+        </div>
+      </div>`;
+    host.appendChild(div);
+  });
+  host.querySelectorAll(".btn-edit").forEach(btn=>btn.addEventListener("click", async e=>{
+    const id=e.currentTarget.getAttribute("data-id");
+    const c=await getByKey("contacts", id);
+    populateContactForm(c);
+  }));
+  host.querySelectorAll(".btn-log-now").forEach(btn=>btn.addEventListener("click", async e=>{
+    const id=e.currentTarget.getAttribute("data-id");
+    const c=await getByKey("contacts", id); await logVisitNow(c);
+  }));
+  host.querySelectorAll(".btn-archive").forEach(btn=>btn.addEventListener("click", async e=>{
+    const id=e.currentTarget.getAttribute("data-id");
+    const c=await getByKey("contacts", id); c.active=false; await put("contacts", c); renderContactsList();
+  }));
+}
+async function renderVisits(){
+  const q=document.getElementById("visit-search").value.toLowerCase().trim();
+  const [contacts, visits] = await Promise.all([getAll("contacts"), getAll("visits")]);
+  const nameById = Object.fromEntries(contacts.map(c=>[c.id, c.name]));
+  const filtered = visits.filter(v=>{
+    const hay=(nameById[v.contactId]+" "+(v.notes||"")+" "+(v.nextSteps||"")+" "+(v.outcome||"")).toLowerCase();
+    return !q || hay.includes(q);
+  }).sort((a,b)=> new Date(b.visitDate) - new Date(a.visitDate));
+  const host=document.getElementById("visit-list"); host.innerHTML="";
+  filtered.forEach(v=>{
+    const div=document.createElement("div"); div.className="col-12";
+    div.innerHTML=`
+      <div class="card">
+        <div class="row" style="justify-content:space-between">
+          <h3>${nameById[v.contactId]||"Unknown contact"}</h3>
+          <span class="muted">${fmtDate(v.visitDate)}</span>
+        </div>
+        <div class="row" style="gap:12px">
+          <span class="pill nowrap">${v.outcome||""}</span>
+          ${v.nextSteps?`<span class="pill">Next: ${v.nextSteps}</span>`:""}
+          ${v.createdBy?`<span class="pill">By: ${v.createdBy}</span>`:""}
+        </div>
+        ${v.notes?`<div style="margin-top:6px">${v.notes}</div>`:""}
+      </div>`;
+    host.appendChild(div);
+  });
+}
+async function saveContactFromForm(e){
+  e?.preventDefault();
+  const id = document.getElementById("contact-id").value;
+  const freq=document.getElementById("frequency").value;
+  const record={
+    id: id || undefined,
+    name: document.getElementById("name").value.trim(),
+    org: document.getElementById("org").value.trim(),
+    location: document.getElementById("location").value.trim(),
+    email: document.getElementById("email").value.trim(),
+    phone: document.getElementById("phone").value.trim(),
+    frequency: freq,
+    freqDays: Number(document.getElementById("freqDays").value || ({"Weekly":7,"Biweekly":14,"Monthly":30,"Quarterly":90}[freq]||30)),
+    lastVisit: document.getElementById("lastVisit").value ? new Date(document.getElementById("lastVisit").value).toISOString() : null,
+    notes: document.getElementById("notes").value.trim(),
+    active: document.getElementById("active").value === "true"
+  };
+  if (!record.name){ alert("Name is required."); return; }
+  if (id) await put("contacts", record); else record.id=await add("contacts", record);
+  document.getElementById("contact-id").value = record.id || "";
+  await Promise.all([renderToday(), renderContactsList(), refreshVisitContactDropdown()]);
+  showSection("view-today");
+}
+async function logVisitNow(contact){
+  const notes = prompt(`Notes for ${contact.name}?`, "");
+  const visit={ contactId: contact.id, visitDate: new Date().toISOString(), notes: notes||"", outcome:"Follow-up", nextSteps:"", createdBy:"" };
+  await add("visits", visit);
+  contact.lastVisit = visit.visitDate; await put("contacts", contact);
+  await Promise.all([renderToday(), renderVisits()]);
+}
+async function saveVisitFromForm(e){
+  e?.preventDefault();
+  const contactId = document.getElementById("visit-contact").value;
+  if (!contactId){ alert("Pick a contact."); return; }
+  const dt = document.getElementById("visit-date").value ? new Date(document.getElementById("visit-date").value).toISOString() : new Date().toISOString();
+  const visit={ contactId, visitDate: dt, notes: document.getElementById("visit-notes").value.trim(), outcome: document.getElementById("visit-outcome").value, nextSteps: document.getElementById("visit-next").value.trim(), createdBy: document.getElementById("visit-createdBy").value.trim() };
+  await add("visits", visit);
+  const c = await getByKey("contacts", contactId); c.lastVisit = dt; await put("contacts", c);
+  document.getElementById("visit-form").reset(); await Promise.all([renderToday(), renderVisits()]);
+}
+async function refreshVisitContactDropdown(){
+  const sel=document.getElementById("visit-contact");
+  const contacts=(await getAll("contacts")).filter(c=>c.active!==false).sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+  sel.innerHTML=`<option value="">— Select —</option>` + contacts.map(c=>`<option value="${c.id}">${c.name}</option>`).join("");
+}
+function showSection(id){ ["view-today","view-contacts","view-log"].forEach(v=>document.getElementById(v).classList.add("hidden")); document.getElementById(id).classList.remove("hidden"); }
+function wireEvents(){
+  document.getElementById("btn-show-today").addEventListener("click", ()=>{ showSection("view-today"); renderToday(); });
+  document.getElementById("btn-show-contacts").addEventListener("click", ()=>{ showSection("view-contacts"); renderContactsList(); });
+  document.getElementById("btn-show-log").addEventListener("click", ()=>{ showSection("view-log"); renderVisits(); });
+  document.getElementById("btn-add-quick").addEventListener("click", ()=>{ showSection("view-contacts"); document.getElementById("name").focus(); });
+
+  document.getElementById("btn-export").addEventListener("click", exportJSON);
+  document.getElementById("import-file").addEventListener("change", e => e.target.files[0] && importJSON(e.target.files[0]));
+
+  document.getElementById("contact-form").addEventListener("submit", saveContactFromForm);
+  document.getElementById("btn-reset").addEventListener("click", ()=>{ document.getElementById("contact-form").reset(); document.getElementById("form-title").textContent="Add Contact"; });
+  document.getElementById("frequency").addEventListener("change", ()=>{ const f=document.getElementById("frequency").value; document.getElementById("freqDays").value = ({"Weekly":7,"Biweekly":14,"Monthly":30,"Quarterly":90}[f]||Number(document.getElementById("freqDays").value||30)); });
+  document.getElementById("visit-form").addEventListener("submit", saveVisitFromForm);
+  document.getElementById("btn-quick-today").addEventListener("click", async ()=>{ const id=document.getElementById("visit-contact").value; if(!id){ alert("Pick a contact."); return; } const c=await getByKey("contacts", id); await logVisitNow(c); document.getElementById("visit-form").reset(); });
+
+  document.getElementById("search").addEventListener("input", renderToday);
+  document.getElementById("filter-status").addEventListener("change", renderToday);
+  document.getElementById("contact-search").addEventListener("input", renderContactsList);
+
+  // Auth buttons
+  document.getElementById("btn-signin").addEventListener("click", async ()=>{
+    const email = document.getElementById("auth-email").value.trim();
+    const pass = document.getElementById("auth-pass").value;
+    try { await signInWithEmailAndPassword(auth, email, pass); }
+    catch (e) { alert("Sign in failed. If you don't have an account, tap Create."); }
+  });
+  document.getElementById("btn-signup").addEventListener("click", async ()=>{
+    const email = document.getElementById("auth-email").value.trim();
+    const pass = document.getElementById("auth-pass").value;
+    try { await createUserWithEmailAndPassword(auth, email, pass); }
+    catch (e) { alert("Create failed: "+e.message); }
+  });
+  document.getElementById("btn-signout").addEventListener("click", async ()=>{ await signOut(auth); });
+}
+
+function updateAuthUI(){
+  const una = document.getElementById("authbar-unauthed");
+  const aut = document.getElementById("authbar-authed");
+  if (user) {
+    una.classList.add("hidden"); aut.classList.remove("hidden");
+    document.getElementById("whoami").textContent = user.email;
+  } else {
+    una.classList.remove("hidden"); aut.classList.add("hidden");
+  }
+}
+
+function clearUI(){
+  document.getElementById("today-list").innerHTML="";
+  document.getElementById("contact-list").innerHTML="";
+  document.getElementById("visit-list").innerHTML="";
+}
+
+function subscribeRealtime(){
+  // re-render when either collection changes (from this device or others)
+  onSnapshot(collection(db, colPath("contacts")), ()=>{ renderToday(); renderContactsList(); refreshVisitContactDropdown(); });
+  onSnapshot(collection(db, colPath("visits")), ()=>{ renderVisits(); });
+}
+
+async function loadAllAndRender(){
+  await Promise.all([renderToday(), renderContactsList(), renderVisits(), refreshVisitContactDropdown()]);
+  showSection("view-today");
+}
+
+async function exportJSON(){
+  const [contacts, visits] = await Promise.all([getAll("contacts"), getAll("visits")]);
+  const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), contacts, visits }, null, 2)], {type:"application/json"});
+  const a = document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="visit-tracker-backup.json"; a.click(); URL.revokeObjectURL(a.href);
+}
+async function importJSON(file){
+  const text=await file.text(); const data=JSON.parse(text); if(!data.contacts||!data.visits){ alert("Invalid file."); return; }
+  if(!confirm("Importing will MERGE with existing records. Continue?")) return;
+  for(const c of data.contacts){ const copy={...c}; delete copy.id; await add("contacts", copy); }
+  const all=await getAll("contacts"); const byName={}; all.forEach(c=>{ byName[c.name]=c.id; });
+  for(const v of data.visits){ const name=(data.contacts.find(c=>c.id===v.contactId)||{}).name; const newId=name?byName[name]:null; if(newId){ const copy={...v}; delete copy.id; copy.contactId=newId; await add("visits", copy); } }
+  await Promise.all([renderToday(), renderContactsList(), renderVisits(), refreshVisitContactDropdown()]); alert("Import complete.");
+}
+
+// Boot
+wireEvents();
+const cloudOK = await initCloud();
+if (!cloudOK) {
+  alert("Cloud sync is not configured. Open README and paste your Firebase config into index.html.");
+}
+</script>
+</body>
+</html>
