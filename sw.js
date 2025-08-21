@@ -1,5 +1,5 @@
-// sw.js — v5
-const CACHE_NAME = 'visit-tracker-sync-v5';
+// sw.js — v6
+const CACHE_NAME = 'visit-tracker-sync-v6';
 const ASSETS = ['./','./index.html','./manifest.webmanifest','./sw.js','./icons/icon-192.png','./icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {
