@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hill AFB Visit Tracker (Cloud Sync) — v8</title>
+  <title>Hill AFB Visit Tracker (Cloud Sync) — v9</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="VisitTracker">
@@ -31,18 +31,15 @@
     @media (max-width:430px){ .whoami{display:none} }
     .hidden{display:none!important}
 
-    /* Nav chips row */
     .navchips{display:flex;gap:8px;flex-wrap:wrap}
 
     main{padding:14px;max-width:1100px;margin:0 auto}
     .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
 
-    /* Inputs */
     button,select,input,textarea{font:inherit;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:#fff;color:#222}
     .field input,.field select,.field textarea{width:100%}
     label{display:block;margin:0 0 5px 2px;font-weight:600}
 
-    /* Mobile-first grids */
     .grid{display:grid;grid-template-columns:1fr;gap:10px}
     .col-4,.col-6,.col-8,.col-12{grid-column:span 1}
     @media (min-width: 900px){
@@ -50,12 +47,10 @@
       .col-4{grid-column:span 4}.col-6{grid-column:span 6}.col-8{grid-column:span 8}.col-12{grid-column:span 12}
     }
 
-    /* Cards — compact */
     .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
     .card h3{margin:0 0 4px 0;font-size:16px}
     .muted{color:var(--muted);font-size:12px}
 
-    /* Today/Contacts cards */
     .card.red{border-left:6px solid var(--red)}
     .card.yellow{border-left:6px solid var(--yellow)}
     .card.green{border-left:6px solid var(--green)}
@@ -66,21 +61,22 @@
     .meta-line{display:flex;gap:6px;align-items:center;flex-wrap:nowrap;overflow:auto;scrollbar-width:none}
     .meta-line::-webkit-scrollbar{display:none}
 
-    /* Smaller action buttons on cards */
     .btn-ghost{background:#fff;border:1px solid var(--border);border-radius:999px;padding:7px 14px}
 
-    /* Lists: responsive columns */
     #today-list,#visit-list,#contact-list{display:grid;grid-template-columns:1fr;gap:10px}
     @media (min-width:600px){ #today-list,#contact-list{grid-template-columns:1fr 1fr} }
     @media (min-width:1100px){ #today-list,#contact-list{grid-template-columns:1fr 1fr 1fr} }
 
     .footer{margin-top:16px;color:var(--muted);font-size:12px}
   </style>
+
+  <!-- CSV parser for Import CSV -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
 <body>
   <header>
     <div class="toprow">
-      <h1>Hill AFB Visit Tracker (Cloud Sync) — v8</h1>
+      <h1>Hill AFB Visit Tracker (Cloud Sync) — v9</h1>
       <span class="tagline">Cloud sync • Offline • Local cache</span>
 
       <!-- Signed OUT -->
@@ -95,13 +91,14 @@
       <div class="right row authbar hidden" id="authbar-authed">
         <span id="whoami" class="whoami"></span>
         <button id="btn-export" class="chip">Export</button>
-        <button id="btn-import" class="chip">Import JSON</button>
-        <input id="import-file" type="file" accept="application/json" class="hidden">
+        <button id="btn-import-json" class="chip">Import JSON</button>
+        <button id="btn-import-csv" class="chip">Import CSV</button>
+        <input id="import-json-file" type="file" accept="application/json" class="hidden">
+        <input id="import-csv-file" type="file" accept=".csv,text/csv" class="hidden">
         <button id="btn-signout" class="chip strong">Sign out</button>
       </div>
     </div>
 
-    <!-- Compact nav chips -->
     <div class="navchips" id="nav-controls">
       <button id="btn-show-today" class="chip">Today</button>
       <button id="btn-show-contacts" class="chip">Contacts</button>
@@ -202,12 +199,11 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function() {
-        navigator.serviceWorker.register('sw.js?v=8'); // bump to fetch latest
+        navigator.serviceWorker.register('sw.js?v=9'); // bump to fetch latest
       });
     }
   </script>
 
-  <!-- Main app -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import { getFirestore, enableIndexedDbPersistence, collection, addDoc, setDoc, doc, getDocs, getDoc, query, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -267,7 +263,6 @@
       return { nextDue: nextDue, diffDays: diff, status: status };
     }
 
-    // Build a contact card; control whether Archive button shows
     function contactCardHTML(c, opts){
       opts = opts || {};
       const showArchive = !!opts.showArchive;
@@ -310,13 +305,12 @@
       const host=$("#today-list"); host.innerHTML="";
       enriched.forEach(function(c){
         const wrap=document.createElement("div");
-        wrap.innerHTML = contactCardHTML(c, {showArchive:false}); // no Archive on Today
+        wrap.innerHTML = contactCardHTML(c, {showArchive:false}); // Today: no Archive
         host.appendChild(wrap.firstChild);
       });
 
       host.querySelectorAll(".btn-edit").forEach(function(btn){ btn.addEventListener("click", async function(e){ const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id); showSection("view-contacts"); populateContactForm(c); });});
       host.querySelectorAll(".btn-log-now").forEach(function(btn){ btn.addEventListener("click", async function(e){ const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id); await logVisitNow(c); });});
-      // No Archive buttons on Today, so no handler needed here
     }
 
     function populateContactForm(c){
@@ -345,7 +339,7 @@
       }).forEach(function(c){
         const cmp=computeStatus(c);
         const node=document.createElement("div");
-        node.innerHTML=contactCardHTML(Object.assign({}, c, cmp), {showArchive:true}); // Archive shown here
+        node.innerHTML=contactCardHTML(Object.assign({}, c, cmp), {showArchive:true});
         host.appendChild(node.firstChild);
       });
 
@@ -445,47 +439,7 @@
       document.getElementById(id).classList.remove("hidden");
     }
 
-    function wireEvents(){
-      // Nav
-      document.getElementById("btn-show-today").addEventListener("click", function(){ showSection("view-today"); renderToday(); });
-      document.getElementById("btn-show-contacts").addEventListener("click", function(){ showSection("view-contacts"); renderContactsList(); });
-      document.getElementById("btn-show-log").addEventListener("click", function(){ showSection("view-log"); renderVisits(); });
-      document.getElementById("btn-add-quick").addEventListener("click", function(){ showSection("view-contacts"); document.getElementById("name").focus(); });
-
-      // Backup
-      document.getElementById("btn-export").addEventListener("click", exportJSON);
-      document.getElementById("btn-import").addEventListener("click", function(){ document.getElementById("import-file").click(); });
-      document.getElementById("import-file").addEventListener("change", function(e){ if(e.target.files[0]) importJSON(e.target.files[0]); });
-
-      // Forms
-      document.getElementById("contact-form").addEventListener("submit", saveContactFromForm);
-      document.getElementById("btn-reset").addEventListener("click", function(){ document.getElementById("contact-form").reset(); document.getElementById("form-title").textContent="Add Contact"; });
-      document.getElementById("frequency").addEventListener("change", function(){ var f=document.getElementById("frequency").value; document.getElementById("freqDays").value = ({"Weekly":7,"Biweekly":14,"Monthly":30,"Quarterly":90}[f]||Number(document.getElementById("freqDays").value||30)); });
-      document.getElementById("visit-form").addEventListener("submit", saveVisitFromForm);
-      document.getElementById("btn-quick-today").addEventListener("click", async function(){ const id=document.getElementById("visit-contact").value; if(!id){ alert("Pick a contact."); return; } const c=await getByKey("contacts", id); await logVisitNow(c); document.getElementById("visit-form").reset(); });
-
-      // Filters
-      document.getElementById("search").addEventListener("input", renderToday);
-      document.getElementById("filter-status").addEventListener("change", renderToday);
-
-      // Auth
-      document.getElementById("btn-signin").addEventListener("click", async function(){ const email=document.getElementById("auth-email").value.trim(); const pass=document.getElementById("auth-pass").value; try { await signInWithEmailAndPassword(auth, email, pass); } catch (e) { alert("Sign in failed. If you don't have an account, tap Create."); } });
-      document.getElementById("btn-signup").addEventListener("click", async function(){ const email=document.getElementById("auth-email").value.trim(); const pass=document.getElementById("auth-pass").value; try { await createUserWithEmailAndPassword(auth, email, pass); } catch (e) { alert("Create failed: "+e.message); } });
-      document.getElementById("btn-signout").addEventListener("click", async function(){ await signOut(auth); });
-    }
-
-    function updateAuthUI(){
-      const una = document.getElementById("authbar-unauthed");
-      const aut = document.getElementById("authbar-authed");
-      if (user) { una.classList.add("hidden"); aut.classList.remove("hidden"); document.getElementById("whoami").textContent = user.email; }
-      else { una.classList.remove("hidden"); aut.classList.add("hidden"); }
-    }
-    function clearUI(){ document.getElementById("today-list").innerHTML=""; document.getElementById("contact-list").innerHTML=""; document.getElementById("visit-list").innerHTML=""; }
-    function subscribeRealtime(){
-      onSnapshot(collection(db, colPath("contacts")), function(){ renderToday(); renderContactsList(); refreshVisitContactDropdown(); });
-      onSnapshot(collection(db, colPath("visits")), function(){ renderVisits(); });
-    }
-
+    // JSON + CSV import/export wiring
     async function exportJSON(){
       const results = await Promise.all([getAll("contacts"), getAll("visits")]);
       const contacts = results[0], visits = results[1];
@@ -500,6 +454,112 @@
       for(var j=0;j<data.visits.length;j++){ const v=data.visits[j]; const name=(data.contacts.find(function(c){ return c.id===v.contactId; })||{}).name; const newId=name?byName[name]:null; if(newId){ const copy2=Object.assign({}, v); delete copy2.id; copy2.contactId=newId; await addItem("visits", copy2); } }
       await Promise.all([renderToday(), renderContactsList(), renderVisits(), refreshVisitContactDropdown()]); alert("Import complete.");
     }
+    async function importCSV(file){
+      if (!user){ alert("Sign in first."); return; }
+      const existing = await getAll("contacts");
+      const byKey = {}; existing.forEach(function(c){ const k=((c.name||"")+"|"+(c.org||"")).toLowerCase(); byKey[k]=true; });
+
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: async function(results){
+          const rows = results.data || [];
+          if (!rows.length){ alert("No rows found."); return; }
+
+          function get(o){ for (var i=1;i<arguments.length;i++){ var k=arguments[i]; if (o[k]!==undefined && o[k]!==null && String(o[k]).trim()!=="") return String(o[k]).trim(); } return ""; }
+
+          const toAdd = [];
+          for (var i=0;i<rows.length;i++){
+            const r = rows[i];
+
+            const first = get(r,'First Name','FirstName','first_name','First');
+            const last  = get(r,'Last Name','LastName','last_name','Last');
+            const name  = get(r,'Name') || (first || last ? (first+" "+last).trim() : "");
+            if (!name) continue;
+
+            const org = get(r,'Account Name','Company','Organization','Account');
+            const email = get(r,'Email','Work Email','Primary Email');
+            const phone = get(r,'Phone','Work Phone','Mobile','Mobile Phone');
+            const street = get(r,'Mailing Street','Street');
+            const city   = get(r,'Mailing City','City');
+            const state  = get(r,'Mailing State/Province','Mailing State','State/Province','State');
+            const zip    = get(r,'Mailing Postal Code','Postal Code','Zip');
+            const country= get(r,'Mailing Country','Country');
+            const location = [street, city, state, zip, country].filter(Boolean).join(', ');
+
+            const lastVisitStr = get(r,'Last Activity Date','Last Visit','LastContact','Last Contact Date');
+            const lastVisit = lastVisitStr ? new Date(lastVisitStr).toISOString() : null;
+
+            const k = (name+'|'+(org||'')).toLowerCase();
+            if (byKey[k]) continue; // skip duplicate (same Name+Org)
+
+            toAdd.push({
+              name: name,
+              org: org,
+              location: location,
+              email: email,
+              phone: phone,
+              frequency: 'Monthly',
+              freqDays: 30,
+              lastVisit: lastVisit,
+              notes: '',
+              active: true
+            });
+          }
+
+          if (!toAdd.length){ alert("Everything in that file already exists (by Name + Org) or no valid rows found."); return; }
+
+          if (!confirm("Import "+toAdd.length+" contacts into your account? (Duplicates by Name+Org are skipped)")) return;
+
+          for (var j=0;j<toAdd.length;j++){ await addItem("contacts", toAdd[j]); }
+          await Promise.all([renderToday(), renderContactsList(), refreshVisitContactDropdown()]);
+          alert("CSV import complete.");
+        },
+        error: function(err){ alert("CSV parse error: "+err.message); }
+      });
+    }
+
+    function showSection(id){
+      ["view-today","view-contacts","view-log"].forEach(function(v){ document.getElementById(v).classList.add("hidden"); });
+      document.getElementById(id).classList.remove("hidden");
+    }
+    function wireEvents(){
+      document.getElementById("btn-show-today").addEventListener("click", function(){ showSection("view-today"); renderToday(); });
+      document.getElementById("btn-show-contacts").addEventListener("click", function(){ showSection("view-contacts"); renderContactsList(); });
+      document.getElementById("btn-show-log").addEventListener("click", function(){ showSection("view-log"); renderVisits(); });
+      document.getElementById("btn-add-quick").addEventListener("click", function(){ showSection("view-contacts"); document.getElementById("name").focus(); });
+
+      document.getElementById("btn-export").addEventListener("click", exportJSON);
+      document.getElementById("btn-import-json").addEventListener("click", function(){ document.getElementById("import-json-file").click(); });
+      document.getElementById("import-json-file").addEventListener("change", function(e){ if(e.target.files[0]) importJSON(e.target.files[0]); });
+
+      document.getElementById("btn-import-csv").addEventListener("click", function(){ document.getElementById("import-csv-file").click(); });
+      document.getElementById("import-csv-file").addEventListener("change", function(e){ if(e.target.files[0]) importCSV(e.target.files[0]); });
+
+      document.getElementById("contact-form").addEventListener("submit", saveContactFromForm);
+      document.getElementById("btn-reset").addEventListener("click", function(){ document.getElementById("contact-form").reset(); document.getElementById("form-title").textContent="Add Contact"; });
+      document.getElementById("frequency").addEventListener("change", function(){ var f=document.getElementById("frequency").value; document.getElementById("freqDays").value = ({"Weekly":7,"Biweekly":14,"Monthly":30,"Quarterly":90}[f]||Number(document.getElementById("freqDays").value||30)); });
+      document.getElementById("visit-form").addEventListener("submit", saveVisitFromForm);
+      document.getElementById("btn-quick-today").addEventListener("click", async function(){ const id=document.getElementById("visit-contact").value; if(!id){ alert("Pick a contact."); return; } const c=await getByKey("contacts", id); await logVisitNow(c); document.getElementById("visit-form").reset(); });
+
+      document.getElementById("search").addEventListener("input", renderToday);
+      document.getElementById("filter-status").addEventListener("change", renderToday);
+
+      document.getElementById("btn-signin").addEventListener("click", async function(){ const email=document.getElementById("auth-email").value.trim(); const pass=document.getElementById("auth-pass").value; try { await signInWithEmailAndPassword(auth, email, pass); } catch (e) { alert("Sign in failed. If you don't have an account, tap Create."); } });
+      document.getElementById("btn-signup").addEventListener("click", async function(){ const email=document.getElementById("auth-email").value.trim(); const pass=document.getElementById("auth-pass").value; try { await createUserWithEmailAndPassword(auth, email, pass); } catch (e) { alert("Create failed: "+e.message); } });
+      document.getElementById("btn-signout").addEventListener("click", async function(){ await signOut(auth); });
+    }
+    function updateAuthUI(){
+      const una = document.getElementById("authbar-unauthed");
+      const aut = document.getElementById("authbar-authed");
+      if (user) { una.classList.add("hidden"); aut.classList.remove("hidden"); document.getElementById("whoami").textContent = user.email; }
+      else { una.classList.remove("hidden"); aut.classList.add("hidden"); }
+    }
+    function clearUI(){ document.getElementById("today-list").innerHTML=""; document.getElementById("contact-list").innerHTML=""; document.getElementById("visit-list").innerHTML=""; }
+    function subscribeRealtime(){
+      onSnapshot(collection(db, colPath("contacts")), function(){ renderToday(); renderContactsList(); refreshVisitContactDropdown(); });
+      onSnapshot(collection(db, colPath("visits")), function(){ renderVisits(); });
+    }
 
     (async function init(){
       if (!validConfig(firebaseConfig)) return;
@@ -512,7 +572,6 @@
     async function loadAllAndRender(){ await Promise.all([renderToday(), renderContactsList(), renderVisits(), refreshVisitContactDropdown()]); showSection("view-today"); }
   </script>
 
-  <!-- Show errors clearly if something goes wrong -->
   <script>
     window.addEventListener('unhandledrejection', function(e){ alert('Error (promise): ' + (e.reason && (e.reason.stack || e.reason.message || e.reason))); });
     window.addEventListener('error', function(e){ alert('Error (script): ' + e.message + (e.filename?(' @ '+e.filename+':'+e.lineno+':'+e.colno):'')); });
