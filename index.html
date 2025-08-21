@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hill AFB Visit Tracker (Cloud Sync) — v3</title>
+  <title>Hill AFB Visit Tracker (Cloud Sync) — v4</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="VisitTracker">
@@ -43,7 +43,7 @@
 </head>
 <body>
   <header>
-    <h1>Hill AFB Visit Tracker (Cloud Sync) — v3</h1>
+    <h1>Hill AFB Visit Tracker (Cloud Sync) — v4</h1>
     <span class="muted">Cloud sync • Offline • Local cache</span>
 
     <!-- Signed OUT -->
@@ -164,18 +164,18 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function() {
-        // NOTE: versioned URL so devices always fetch latest sw.js
-        navigator.serviceWorker.register('sw.js?v=3');
+        // versioned SW url ensures updates: bump v=4 when you change sw.js
+        navigator.serviceWorker.register('sw.js?v=4');
       });
     }
   </script>
 
+  <!-- Main app (no top-level await; no optional-chaining) -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import { getFirestore, enableIndexedDbPersistence, collection, addDoc, setDoc, doc, getDocs, getDoc, query, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-    // Your Firebase config
     const firebaseConfig = {
       apiKey: "AIzaSyAoVOV9GPu6n4M2BVFlOSnXwEUcASjL9Dk",
       authDomain: "hill-afb-tracker-cloud.firebaseapp.com",
@@ -187,38 +187,22 @@
 
     const $ = (sel) => document.querySelector(sel);
 
-    // Cloud init
-    let app, auth, db, user;
+    // Cloud state
+    var app, auth, db, user = null;
 
-    function validConfig(cfg) { return !!cfg.apiKey; }
+    function validConfig(cfg) { return !!(cfg && cfg.apiKey); }
 
-    async function initCloud() {
-      if (!validConfig(firebaseConfig)) return false;
-      app = initializeApp(firebaseConfig);
-      auth = getAuth(app);
-      db = getFirestore(app);
-      try { await enableIndexedDbPersistence(db); } catch (e) { /* ok in private mode */ }
-      onAuthStateChanged(auth, (u) => {
-        user = u || null;
-        updateAuthUI();
-        if (user) { subscribeRealtime(); loadAllAndRender(); }
-        else { clearUI(); }
-      });
-      return true;
-    }
+    function colPath(store) { return "users/" + (user ? user.uid : "NOUSER") + "/" + store; }
 
-    // Firestore wrappers
-    function colPath(store) { return `users/${user.uid}/${store}`; }
-
-    async function add(store, value) {
+    async function addItem(store, value) {
       if (!user) throw new Error("Sign in first");
       const ref = await addDoc(collection(db, colPath(store)), value);
-      await setDoc(ref, { ...value, id: ref.id }, { merge: true });
+      await setDoc(ref, Object.assign({}, value, { id: ref.id }), { merge: true });
       return ref.id;
     }
-    async function put(store, value) {
+    async function putItem(store, value) {
       if (!user) throw new Error("Sign in first");
-      const id = value.id || (await add(store, value));
+      const id = value.id || (await addItem(store, value));
       if (!value.id) return id;
       const ref = doc(db, colPath(store), id);
       await setDoc(ref, value, { merge: true });
@@ -227,266 +211,258 @@
     async function getAll(store) {
       if (!user) return [];
       const snap = await getDocs(query(collection(db, colPath(store))));
-      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      return snap.docs.map(d => { const v=d.data(); v.id=d.id; return v; });
     }
     async function getByKey(store, id) {
       const ref = doc(db, colPath(store), id);
       const snap = await getDoc(ref);
-      return snap.exists() ? ({ id: snap.id, ...snap.data() }) : null;
+      return snap.exists() ? (function(){ const v=snap.data(); v.id=snap.id; return v; })() : null;
     }
 
-    // Helpers & UI logic
     function fmtDate(date){ if(!date) return ""; const d=new Date(date); return d.toLocaleDateString()+" "+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); }
     function fmtDateOnly(date){ if(!date) return ""; const d=new Date(date); return d.toISOString().slice(0,10); }
     function dateAddDays(date, days){ const d=new Date(date||new Date()); d.setHours(0,0,0,0); d.setDate(d.getDate()+Number(days||0)); return d; }
-    function defaultDays(freq, fallback=30){ switch(freq){case "Weekly":return 7;case "Biweekly":return 14;case "Monthly":return 30;case "Quarterly":return 90;default:return fallback;} }
+    function defaultDays(freq, fallback){ if(fallback===undefined) fallback=30; if(freq==="Weekly") return 7; if(freq==="Biweekly") return 14; if(freq==="Monthly") return 30; if(freq==="Quarterly") return 90; return fallback; }
     function computeStatus(contact){
       const last = contact.lastVisit ? new Date(contact.lastVisit) : null;
       const days = contact.freqDays || defaultDays(contact.frequency, 30);
       const nextDue = last ? dateAddDays(last, days) : new Date();
       const today = new Date(); today.setHours(0,0,0,0);
       const diff = Math.floor((nextDue - today)/(1000*60*60*24));
-      let status = "red"; if(last){ status = diff<=0 ? "red" : diff<=7 ? "yellow" : "green"; }
-      return { nextDue, diffDays: diff, status };
+      var status = "red"; if(last){ status = diff<=0 ? "red" : (diff<=7 ? "yellow" : "green"); }
+      return { nextDue: nextDue, diffDays: diff, status: status };
     }
 
     async function renderToday(){
-      const q = $("#search").value.toLowerCase().trim();
+      const q = ($("#search").value||"").toLowerCase().trim();
       const statusFilter = $("#filter-status").value;
-      const contacts = (await getAll("contacts")).filter(c => c.active !== false);
-      const enriched = contacts.map(c => ({...c, ...computeStatus(c)})).filter(c => {
-        const hay = (c.name+" "+(c.org||"")+" "+(c.location||"")).toLowerCase();
-        const matchQ = !q || hay.includes(q);
-        const matchS = statusFilter === "all" || c.status === statusFilter;
-        return matchQ && matchS;
-      }).sort((a,b)=>{
-        const score = s => s==="red"?3:s==="yellow"?2:1;
-        const s = score(b.status)-score(a.status);
-        if(s!==0) return s;
-        const d = a.diffDays - b.diffDays; if(d!==0) return d;
-        return (a.name||"").localeCompare(b.name||"");
-      });
+      const contacts = (await getAll("contacts")).filter(function(c){ return c.active !== false; });
+      const enriched = contacts.map(function(c){ const extra=computeStatus(c); var out={}; for (var k in c) out[k]=c[k]; for (var k2 in extra) out[k2]=extra[k2]; return out; })
+        .filter(function(c){
+          const hay = (c.name+" "+(c.org||"")+" "+(c.location||"")).toLowerCase();
+          const matchQ = !q || hay.includes(q);
+          const matchS = statusFilter === "all" || c.status === statusFilter;
+          return matchQ && matchS;
+        })
+        .sort(function(a,b){
+          function score(s){ return s==="red"?3: s==="yellow"?2: 1; }
+          const s = score(b.status)-score(a.status); if(s!==0) return s;
+          const d = a.diffDays - b.diffDays; if(d!==0) return d;
+          return (a.name||"").localeCompare(b.name||"");
+        });
       const host = $("#today-list"); host.innerHTML="";
-      enriched.forEach(c=>{
+      enriched.forEach(function(c){
         const wrap=document.createElement("div"); wrap.className="col-4";
-        wrap.innerHTML=`
-          <div class="card">
-            <div class="row" style="justify-content:space-between">
-              <h3>${c.name||""}</h3>
-              <span class="status-dot ${c.status}"></span>
-            </div>
-            <div class="muted">${c.org||""}${c.org&&c.location?" • ":""}${c.location||""}</div>
-            <div class="row" style="margin:6px 0">
-              <span class="pill ${c.status}">${c.status==="red"?"Past due":c.status==="yellow"?"Due this week":"Not due"}</span>
-              <span class="pill">Next due: ${fmtDateOnly(c.nextDue)}</span>
-              <span class="pill">Freq: ${c.frequency}${c.frequency==="Custom"?` (${c.freqDays}d)`:""}</span>
-            </div>
-            <div class="row">
-              <button data-id="${c.id}" class="btn-log-now">Log visit</button>
-              <button data-id="${c.id}" class="btn-edit">Edit</button>
-              <button data-id="${c.id}" class="btn-mark-inactive">Archive</button>
-            </div>
-          </div>`;
+        wrap.innerHTML = '<div class="card">\
+            <div class="row" style="justify-content:space-between">\
+              <h3>'+(c.name||"")+'</h3>\
+              <span class="status-dot '+c.status+'"></span>\
+            </div>\
+            <div class="muted">'+(c.org||"")+(c.org&&c.location?" • ":"")+(c.location||"")+'</div>\
+            <div class="row" style="margin:6px 0">\
+              <span class="pill '+c.status+'">'+(c.status==="red"?"Past due":(c.status==="yellow"?"Due this week":"Not due"))+'</span>\
+              <span class="pill">Next due: '+fmtDateOnly(c.nextDue)+'</span>\
+              <span class="pill">Freq: '+(c.frequency||"")+(c.frequency==="Custom"?" ("+c.freqDays+"d)":"")+'</span>\
+            </div>\
+            <div class="row">\
+              <button data-id="'+c.id+'" class="btn-log-now">Log visit</button>\
+              <button data-id="'+c.id+'" class="btn-edit">Edit</button>\
+              <button data-id="'+c.id+'" class="btn-mark-inactive">Archive</button>\
+            </div>\
+          </div>';
         host.appendChild(wrap);
       });
-      host.querySelectorAll(".btn-edit").forEach(btn=>btn.addEventListener("click", async e => {
+      host.querySelectorAll(".btn-edit").forEach(function(btn){ btn.addEventListener("click", async function(e){
         const id = e.currentTarget.getAttribute("data-id");
         const c = await getByKey("contacts", id);
         showSection("view-contacts");
         populateContactForm(c);
-      }));
-      host.querySelectorAll(".btn-log-now").forEach(btn=>btn.addEventListener("click", async e => {
+      });});
+      host.querySelectorAll(".btn-log-now").forEach(function(btn){ btn.addEventListener("click", async function(e){
         const id = e.currentTarget.getAttribute("data-id");
         const c = await getByKey("contacts", id);
         await logVisitNow(c);
-      }));
-      host.querySelectorAll(".btn-mark-inactive").forEach(btn=>btn.addEventListener("click", async e => {
+      });});
+      host.querySelectorAll(".btn-mark-inactive").forEach(function(btn){ btn.addEventListener("click", async function(e){
         const id = e.currentTarget.getAttribute("data-id");
         const c = await getByKey("contacts", id);
-        c.active = false; await put("contacts", c); renderToday();
-      }));
+        c.active = false; await putItem("contacts", c); renderToday();
+      });});
     }
+
     function populateContactForm(c){
-      $("#form-title").textContent = c?.id ? "Edit Contact" : "Add Contact";
-      $("#contact-id").value = c?.id || "";
-      $("#name").value = c?.name || "";
-      $("#org").value = c?.org || "";
-      $("#location").value = c?.location || "";
-      $("#email").value = c?.email || "";
-      $("#phone").value = c?.phone || "";
-      $("#frequency").value = c?.frequency || "Monthly";
-      $("#freqDays").value = c?.freqDays || ({"Weekly":7,"Biweekly":14,"Monthly":30,"Quarterly":90}[$("#frequency").value]||30);
-      $("#lastVisit").value = c?.lastVisit ? fmtDateOnly(c.lastVisit) : "";
-      $("#active").value = (c?.active ?? true) ? "true" : "false";
-      $("#notes").value = c?.notes || "";
+      document.getElementById("form-title").textContent = (c && c.id) ? "Edit Contact" : "Add Contact";
+      document.getElementById("contact-id").value = (c && c.id) ? c.id : "";
+      document.getElementById("name").value = (c && c.name) ? c.name : "";
+      document.getElementById("org").value = (c && c.org) ? c.org : "";
+      document.getElementById("location").value = (c && c.location) ? c.location : "";
+      document.getElementById("email").value = (c && c.email) ? c.email : "";
+      document.getElementById("phone").value = (c && c.phone) ? c.phone : "";
+      document.getElementById("frequency").value = (c && c.frequency) ? c.frequency : "Monthly";
+      document.getElementById("freqDays").value = (c && c.freqDays) ? c.freqDays : ({"Weekly":7,"Biweekly":14,"Monthly":30,"Quarterly":90}[document.getElementById("frequency").value]||30);
+      document.getElementById("lastVisit").value = (c && c.lastVisit) ? fmtDateOnly(c.lastVisit) : "";
+      document.getElementById("active").value = (c && c.active===false) ? "false" : "true";
+      document.getElementById("notes").value = (c && c.notes) ? c.notes : "";
     }
+
     async function renderContactsList(){
-      const q = $("#contact-search").value.toLowerCase().trim();
-      const contacts = (await getAll("contacts")).filter(c=>c.active!==false).sort((a,b)=>(a.name||"").localeCompare(b.name||""));
-      const host = $("#contact-list"); host.innerHTML="";
-      contacts.filter(c=>{
+      const q = (document.getElementById("contact-search").value||"").toLowerCase().trim();
+      const contacts = (await getAll("contacts")).filter(function(c){ return c.active!==false; })
+        .sort(function(a,b){ return (a.name||"").localeCompare(b.name||""); });
+      const host = document.getElementById("contact-list"); host.innerHTML="";
+      contacts.filter(function(c){
         const hay=(c.name+" "+(c.org||"")+" "+(c.location||"")).toLowerCase();
         return !q || hay.includes(q);
-      }).forEach(c=>{
+      }).forEach(function(c){
         const cmp = computeStatus(c);
         const div=document.createElement("div"); div.className="col-12";
-        div.innerHTML=`
-          <div class="card">
-            <div class="row" style="justify-content:space-between">
-              <div>
-                <h3>${c.name||""}</h3>
-                <div class="muted">${c.org||""}${c.org&&c.location?" • ":""}${c.location||""}</div>
-              </div>
-              <div class="row">
-                <span class="pill ${cmp.status}">${cmp.status==="red"?"Past due":cmp.status==="yellow"?"Due this week":"Not due"}</span>
-                <span class="pill">Next due: ${fmtDateOnly(cmp.nextDue)}</span>
-              </div>
-            </div>
-            <div class="row" style="margin-top:8px">
-              <button data-id="${c.id}" class="btn-edit">Edit</button>
-              <button data-id="${c.id}" class="btn-log-now">Log visit</button>
-              <button data-id="${c.id}" class="btn-archive danger">Archive</button>
-            </div>
-          </div>`;
+        div.innerHTML = '<div class="card">\
+            <div class="row" style="justify-content:space-between">\
+              <div><h3>'+ (c.name||"") +'</h3>\
+                <div class="muted">'+(c.org||"")+(c.org&&c.location?" • ":"")+(c.location||"")+'</div></div>\
+              <div class="row">\
+                <span class="pill '+cmp.status+'">'+(cmp.status==="red"?"Past due":(cmp.status==="yellow"?"Due this week":"Not due"))+'</span>\
+                <span class="pill">Next due: '+fmtDateOnly(cmp.nextDue)+'</span>\
+              </div></div>\
+            <div class="row" style="margin-top:8px">\
+              <button data-id="'+c.id+'" class="btn-edit">Edit</button>\
+              <button data-id="'+c.id+'" class="btn-log-now">Log visit</button>\
+              <button data-id="'+c.id+'" class="btn-archive danger">Archive</button>\
+            </div></div>';
         host.appendChild(div);
       });
-      host.querySelectorAll(".btn-edit").forEach(btn=>btn.addEventListener("click", async e=>{
+      host.querySelectorAll(".btn-edit").forEach(function(btn){ btn.addEventListener("click", async function(e){
         const id=e.currentTarget.getAttribute("data-id");
         const c=await getByKey("contacts", id);
         populateContactForm(c);
-      }));
-      host.querySelectorAll(".btn-log-now").forEach(btn=>btn.addEventListener("click", async e=>{
+      });});
+      host.querySelectorAll(".btn-log-now").forEach(function(btn){ btn.addEventListener("click", async function(e){
         const id=e.currentTarget.getAttribute("data-id");
         const c=await getByKey("contacts", id); await logVisitNow(c);
-      }));
-      host.querySelectorAll(".btn-archive").forEach(btn=>btn.addEventListener("click", async e=>{
+      });});
+      host.querySelectorAll(".btn-archive").forEach(function(btn){ btn.addEventListener("click", async function(e){
         const id=e.currentTarget.getAttribute("data-id");
-        const c=await getByKey("contacts", id); c.active=false; await put("contacts", c); renderContactsList();
-      }));
+        const c=await getByKey("contacts", id); c.active=false; await putItem("contacts", c); renderContactsList();
+      });});
     }
+
     async function renderVisits(){
-      const q=$("#visit-search").value.toLowerCase().trim();
-      const [contacts, visits] = await Promise.all([getAll("contacts"), getAll("visits")]);
-      const nameById = Object.fromEntries(contacts.map(c=>[c.id, c.name]));
-      const filtered = visits.filter(v=>{
-        const hay=(nameById[v.contactId]+" "+(v.notes||"")+" "+(v.nextSteps||"")+" "+(v.outcome||"")).toLowerCase();
+      const q=(document.getElementById("visit-search").value||"").toLowerCase().trim();
+      const results = await Promise.all([getAll("contacts"), getAll("visits")]);
+      const contacts = results[0], visits = results[1];
+      const nameById = {}; contacts.forEach(function(c){ nameById[c.id]=c.name; });
+      const filtered = visits.filter(function(v){
+        const hay=( (nameById[v.contactId]||"") +" "+(v.notes||"")+" "+(v.nextSteps||"")+" "+(v.outcome||"") ).toLowerCase();
         return !q || hay.includes(q);
-      }).sort((a,b)=> new Date(b.visitDate) - new Date(a.visitDate));
-      const host=$("#visit-list"); host.innerHTML="";
-      filtered.forEach(v=>{
+      }).sort(function(a,b){ return new Date(b.visitDate) - new Date(a.visitDate); });
+      const host=document.getElementById("visit-list"); host.innerHTML="";
+      filtered.forEach(function(v){
         const div=document.createElement("div"); div.className="col-12";
-        div.innerHTML=`
-          <div class="card">
-            <div class="row" style="justify-content:space-between">
-              <h3>${nameById[v.contactId]||"Unknown contact"}</h3>
-              <span class="muted">${fmtDate(v.visitDate)}</span>
-            </div>
-            <div class="row" style="gap:12px">
-              <span class="pill nowrap">${v.outcome||""}</span>
-              ${v.nextSteps?`<span class="pill">Next: ${v.nextSteps}</span>`:""}
-              ${v.createdBy?`<span class="pill">By: ${v.createdBy}</span>`:""}
-            </div>
-            ${v.notes?`<div style="margin-top:6px">${v.notes}</div>`:""}
-          </div>`;
+        div.innerHTML = '<div class="card">\
+            <div class="row" style="justify-content:space-between">\
+              <h3>'+ (nameById[v.contactId]||"Unknown contact") +'</h3>\
+              <span class="muted">'+ fmtDate(v.visitDate) +'</span>\
+            </div>\
+            <div class="row" style="gap:12px">\
+              <span class="pill nowrap">'+ (v.outcome||"") +'</span>\
+              '+ (v.nextSteps?('<span class="pill">Next: '+v.nextSteps+'</span>'):'') +'\
+              '+ (v.createdBy?('<span class="pill">By: '+v.createdBy+'</span>'):'') +'\
+            </div>'+ (v.notes?('<div style="margin-top:6px">'+v.notes+'</div>'):'') +'\
+          </div>';
         host.appendChild(div);
       });
     }
 
-    // FIXED: do NOT send id: undefined to Firestore on new contacts
     async function saveContactFromForm(e){
-      e?.preventDefault();
-      const existingId = $("#contact-id").value.trim();
-      const freq = $("#frequency").value;
+      if (e && e.preventDefault) e.preventDefault();
+      const existingId = (document.getElementById("contact-id").value||"").trim();
+      const freq = document.getElementById("frequency").value;
       const record = {
-        name: $("#name").value.trim(),
-        org: $("#org").value.trim(),
-        location: $("#location").value.trim(),
-        email: $("#email").value.trim(),
-        phone: $("#phone").value.trim(),
+        name: document.getElementById("name").value.trim(),
+        org: document.getElementById("org").value.trim(),
+        location: document.getElementById("location").value.trim(),
+        email: document.getElementById("email").value.trim(),
+        phone: document.getElementById("phone").value.trim(),
         frequency: freq,
-        freqDays: Number($("#freqDays").value || ({"Weekly":7,"Biweekly":14,"Monthly":30,"Quarterly":90}[freq]||30)),
-        lastVisit: $("#lastVisit").value ? new Date($("#lastVisit").value).toISOString() : null,
-        notes: $("#notes").value.trim(),
-        active: $("#active").value === "true"
+        freqDays: Number(document.getElementById("freqDays").value || ({"Weekly":7,"Biweekly":14,"Monthly":30,"Quarterly":90}[freq]||30)),
+        lastVisit: document.getElementById("lastVisit").value ? new Date(document.getElementById("lastVisit").value).toISOString() : null,
+        notes: document.getElementById("notes").value.trim(),
+        active: document.getElementById("active").value === "true"
       };
       if (!record.name){ alert("Name is required."); return; }
       if (existingId) {
-        record.id = existingId;               // update existing
-        await put("contacts", record);
-        $("#contact-id").value = existingId;
+        record.id = existingId;
+        await putItem("contacts", record);
+        document.getElementById("contact-id").value = existingId;
       } else {
-        const newId = await add("contacts", record); // create new
-        $("#contact-id").value = newId;
+        const newId = await addItem("contacts", record);
+        document.getElementById("contact-id").value = newId;
       }
       await Promise.all([renderToday(), renderContactsList(), refreshVisitContactDropdown()]);
       showSection("view-today");
     }
 
     async function logVisitNow(contact){
-      const notes = prompt(`Notes for ${contact.name}?`, "");
+      const notes = prompt("Notes for " + (contact && contact.name ? contact.name : "contact") + "?", "");
       const visit={ contactId: contact.id, visitDate: new Date().toISOString(), notes: notes||"", outcome:"Follow-up", nextSteps:"", createdBy:"" };
-      await add("visits", visit);
-      contact.lastVisit = visit.visitDate; await put("contacts", contact);
+      await addItem("visits", visit);
+      contact.lastVisit = visit.visitDate; await putItem("contacts", contact);
       await Promise.all([renderToday(), renderVisits()]);
     }
     async function saveVisitFromForm(e){
-      e?.preventDefault();
-      const contactId = $("#visit-contact").value;
+      if (e && e.preventDefault) e.preventDefault();
+      const contactId = document.getElementById("visit-contact").value;
       if (!contactId){ alert("Pick a contact."); return; }
-      const dt = $("#visit-date").value ? new Date($("#visit-date").value).toISOString() : new Date().toISOString();
-      const visit={ contactId, visitDate: dt, notes: $("#visit-notes").value.trim(), outcome: $("#visit-outcome").value, nextSteps: $("#visit-next").value.trim(), createdBy: $("#visit-createdBy").value.trim() };
-      await add("visits", visit);
-      const c = await getByKey("contacts", contactId); c.lastVisit = dt; await put("contacts", c);
-      $("#visit-form").reset(); await Promise.all([renderToday(), renderVisits()]);
+      const dt = document.getElementById("visit-date").value ? new Date(document.getElementById("visit-date").value).toISOString() : new Date().toISOString();
+      const visit={ contactId: contactId, visitDate: dt, notes: document.getElementById("visit-notes").value.trim(), outcome: document.getElementById("visit-outcome").value, nextSteps: document.getElementById("visit-next").value.trim(), createdBy: document.getElementById("visit-createdBy").value.trim() };
+      await addItem("visits", visit);
+      const c = await getByKey("contacts", contactId); c.lastVisit = dt; await putItem("contacts", c);
+      document.getElementById("visit-form").reset(); await Promise.all([renderToday(), renderVisits()]);
     }
     async function refreshVisitContactDropdown(){
-      const sel=$("#visit-contact");
-      const contacts=(await getAll("contacts")).filter(c=>c.active!==false).sort((a,b)=>(a.name||"").localeCompare(b.name||""));
-      sel.innerHTML=`<option value="">— Select —</option>` + contacts.map(c=>`<option value="${c.id}">${c.name}</option>`).join("");
+      const sel=document.getElementById("visit-contact");
+      const contacts=(await getAll("contacts")).filter(function(c){ return c.active!==false; })
+        .sort(function(a,b){ return (a.name||"").localeCompare(b.name||""); });
+      sel.innerHTML='<option value="">— Select —</option>' + contacts.map(function(c){ return '<option value="'+c.id+'">'+c.name+'</option>'; }).join("");
     }
-    function showSection(id){ ["view-today","view-contacts","view-log"].forEach(v=>document.getElementById(v).classList.add("hidden")); document.getElementById(id).classList.remove("hidden"); }
+    function showSection(id){
+      ["view-today","view-contacts","view-log"].forEach(function(v){ document.getElementById(v).classList.add("hidden"); });
+      document.getElementById(id).classList.remove("hidden");
+    }
     function wireEvents(){
-      $("#btn-show-today").addEventListener("click", ()=>{ showSection("view-today"); renderToday(); });
-      $("#btn-show-contacts").addEventListener("click", ()=>{ showSection("view-contacts"); renderContactsList(); });
-      $("#btn-show-log").addEventListener("click", ()=>{ showSection("view-log"); renderVisits(); });
-      $("#btn-add-quick").addEventListener("click", ()=>{ showSection("view-contacts"); $("#name").focus(); });
+      document.getElementById("btn-show-today").addEventListener("click", function(){ showSection("view-today"); renderToday(); });
+      document.getElementById("btn-show-contacts").addEventListener("click", function(){ showSection("view-contacts"); renderContactsList(); });
+      document.getElementById("btn-show-log").addEventListener("click", function(){ showSection("view-log"); renderVisits(); });
+      document.getElementById("btn-add-quick").addEventListener("click", function(){ showSection("view-contacts"); document.getElementById("name").focus(); });
 
-      $("#btn-export").addEventListener("click", exportJSON);
-      $("#import-file").addEventListener("change", e => e.target.files[0] && importJSON(e.target.files[0]));
+      document.getElementById("btn-export").addEventListener("click", exportJSON);
+      document.getElementById("import-file").addEventListener("change", function(e){ if(e.target.files[0]) importJSON(e.target.files[0]); });
 
-      $("#contact-form").addEventListener("submit", saveContactFromForm);
-      $("#btn-reset").addEventListener("click", ()=>{ $("#contact-form").reset(); $("#form-title").textContent="Add Contact"; });
-      $("#frequency").addEventListener("change", ()=>{ const f=$("#frequency").value; $("#freqDays").value = ({"Weekly":7,"Biweekly":14,"Monthly":30,"Quarterly":90}[f]||Number($("#freqDays")
+      document.getElementById("contact-form").addEventListener("submit", saveContactFromForm);
+      document.getElementById("btn-reset").addEventListener("click", function(){ document.getElementById("contact-form").reset(); document.getElementById("form-title").textContent="Add Contact"; });
+      document.getElementById("frequency").addEventListener("change", function(){ var f=document.getElementById("frequency").value; document.getElementById("freqDays").value = ({"Weekly":7,"Biweekly":14,"Monthly":30,"Quarterly":90}[f]||Number(document.getElementById("freqDays").value||30)); });
+      document.getElementById("visit-form").addEventListener("submit", saveVisitFromForm);
+      document.getElementById("btn-quick-today").addEventListener("click", async function(){ const id=document.getElementById("visit-contact").value; if(!id){ alert("Pick a contact."); return; } const c=await getByKey("contacts", id); await logVisitNow(c); document.getElementById("visit-form").reset(); });
 
-The message got cut due to length? Wait ensure not to exceed token limit. Continue code.
-…continuing (paste this second block directly after the previous block, replacing the rest of the file).
-
-html
-Copy
-Edit
-      .value||30)); });
-      $("#visit-form").addEventListener("submit", saveVisitFromForm);
-      $("#btn-quick-today").addEventListener("click", async ()=>{ const id=$("#visit-contact").value; if(!id){ alert("Pick a contact."); return; } const c=await getByKey("contacts", id); await logVisitNow(c); $("#visit-form").reset(); });
-
-      $("#search").addEventListener("input", renderToday);
-      $("#filter-status").addEventListener("change", renderToday);
-      $("#contact-search").addEventListener("input", renderContactsList);
-      $("#visit-search").addEventListener("input", renderVisits);
+      document.getElementById("search").addEventListener("input", renderToday);
+      document.getElementById("filter-status").addEventListener("change", renderToday);
+      document.getElementById("contact-search").addEventListener("input", renderContactsList);
+      document.getElementById("visit-search").addEventListener("input", renderVisits);
 
       // Auth buttons
-      $("#btn-signin").addEventListener("click", async ()=>{
-        const email = $("#auth-email").value.trim();
-        const pass = $("#auth-pass").value;
+      document.getElementById("btn-signin").addEventListener("click", async function(){
+        const email = document.getElementById("auth-email").value.trim();
+        const pass = document.getElementById("auth-pass").value;
         try { await signInWithEmailAndPassword(auth, email, pass); }
         catch (e) { alert("Sign in failed. If you don't have an account, tap Create."); }
       });
-      $("#btn-signup").addEventListener("click", async ()=>{
-        const email = $("#auth-email").value.trim();
-        const pass = $("#auth-pass").value;
+      document.getElementById("btn-signup").addEventListener("click", async function(){
+        const email = document.getElementById("auth-email").value.trim();
+        const pass = document.getElementById("auth-pass").value;
         try { await createUserWithEmailAndPassword(auth, email, pass); }
         catch (e) { alert("Create failed: "+e.message); }
       });
-      $("#btn-signout").addEventListener("click", async ()=>{ await signOut(auth); });
+      document.getElementById("btn-signout").addEventListener("click", async function(){ await signOut(auth); });
     }
 
     function updateAuthUI(){
@@ -495,39 +471,54 @@ Edit
       if (user) { una.classList.add("hidden"); aut.classList.remove("hidden"); document.getElementById("whoami").textContent = user.email; }
       else { una.classList.remove("hidden"); aut.classList.add("hidden"); }
     }
-
     function clearUI(){ document.getElementById("today-list").innerHTML=""; document.getElementById("contact-list").innerHTML=""; document.getElementById("visit-list").innerHTML=""; }
-
     function subscribeRealtime(){
-      onSnapshot(collection(db, colPath("contacts")), ()=>{ renderToday(); renderContactsList(); refreshVisitContactDropdown(); });
-      onSnapshot(collection(db, colPath("visits")), ()=>{ renderVisits(); });
+      onSnapshot(collection(db, colPath("contacts")), function(){ renderToday(); renderContactsList(); refreshVisitContactDropdown(); });
+      onSnapshot(collection(db, colPath("visits")), function(){ renderVisits(); });
     }
 
-    async function loadAllAndRender(){ await Promise.all([renderToday(), renderContactsList(), renderVisits(), refreshVisitContactDropdown()]); showSection("view-today"); }
-
     async function exportJSON(){
-      const [contacts, visits] = await Promise.all([getAll("contacts"), getAll("visits")]);
-      const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), contacts, visits }, null, 2)], {type:"application/json"});
+      const results = await Promise.all([getAll("contacts"), getAll("visits")]);
+      const contacts = results[0], visits = results[1];
+      const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), contacts: contacts, visits: visits }, null, 2)], {type:"application/json"});
       const a = document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="visit-tracker-backup.json"; a.click(); URL.revokeObjectURL(a.href);
     }
     async function importJSON(file){
       const text=await file.text(); const data=JSON.parse(text); if(!data.contacts||!data.visits){ alert("Invalid file."); return; }
       if(!confirm("Importing will MERGE with existing records. Continue?")) return;
-      for(const c of data.contacts){ const copy={...c}; delete copy.id; await add("contacts", copy); }
-      const all=await getAll("contacts"); const byName={}; all.forEach(c=>{ byName[c.name]=c.id; });
-      for(const v of data.visits){ const name=(data.contacts.find(c=>c.id===v.contactId)||{}).name; const newId=name?byName[name]:null; if(newId){ const copy={...v}; delete copy.id; copy.contactId=newId; await add("visits", copy); } }
+      for(var i=0;i<data.contacts.length;i++){ const c=data.contacts[i]; const copy=Object.assign({}, c); delete copy.id; await addItem("contacts", copy); }
+      const all=await getAll("contacts"); const byName={}; all.forEach(function(c){ byName[c.name]=c.id; });
+      for(var j=0;j<data.visits.length;j++){ const v=data.visits[j]; const name=(data.contacts.find(function(c){ return c.id===v.contactId; })||{}).name; const newId=name?byName[name]:null; if(newId){ const copy2=Object.assign({}, v); delete copy2.id; copy2.contactId=newId; await addItem("visits", copy2); } }
       await Promise.all([renderToday(), renderContactsList(), renderVisits(), refreshVisitContactDropdown()]); alert("Import complete.");
     }
 
-    wireEvents();
-    const cloudOK = await initCloud();
-    if (!cloudOK) { alert("Cloud sync is not configured. (If you see this, refresh once.)"); }
+    // Initialize (wrapped IIFE; no top-level await)
+    (async function init(){
+      if (!validConfig(firebaseConfig)) return;
+      app = initializeApp(firebaseConfig);
+      auth = getAuth(app);
+      db = getFirestore(app);
+      try { await enableIndexedDbPersistence(db); } catch (e) { /* ok if not available */ }
+      wireEvents();
+      onAuthStateChanged(auth, function(u){
+        user = u || null;
+        updateAuthUI();
+        if (user) { subscribeRealtime(); loadAllAndRender(); }
+        else { clearUI(); }
+      });
+    })();
+
+    async function loadAllAndRender(){ await Promise.all([renderToday(), renderContactsList(), renderVisits(), refreshVisitContactDropdown()]); showSection("view-today"); }
   </script>
 
-  <!-- DEBUG: show any hidden errors so we can fix fast -->
+  <!-- DEBUG: show more details if something fails -->
   <script>
-    window.addEventListener('unhandledrejection', e => { alert('Error: ' + (e.reason && (e.reason.message || e.reason))); });
-    window.addEventListener('error', e => { alert('Error: ' + e.message); });
+    window.addEventListener('unhandledrejection', function(e){
+      alert('Error (promise): ' + (e.reason && (e.reason.stack || e.reason.message || e.reason)));
+    });
+    window.addEventListener('error', function(e){
+      alert('Error (script): ' + e.message + (e.filename?(' @ '+e.filename+':'+e.lineno+':'+e.colno):''));
+    });
   </script>
 </body>
 </html>
