@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hill AFB Visit Tracker (Cloud Sync) — v11</title>
+  <title>Hill AFB Visit Tracker (Cloud Sync) — v12</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="VisitTracker">
@@ -63,7 +63,7 @@
 <body>
   <header>
     <div class="toprow">
-      <h1>Hill AFB Visit Tracker (Cloud Sync) — v11</h1>
+      <h1>Hill AFB Visit Tracker (Cloud Sync) — v12</h1>
       <span class="tagline">Cloud sync • Offline • Local cache</span>
 
       <!-- Signed OUT -->
@@ -186,7 +186,7 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function() {
-        navigator.serviceWorker.register('sw.js?v=11'); // fetch latest
+        navigator.serviceWorker.register('sw.js?v=12');
       });
     }
   </script>
@@ -211,13 +211,12 @@
     function validConfig(cfg) { return !!(cfg && cfg.apiKey); }
     function colPath(store) { return "users/" + (user ? user.uid : "NOUSER") + "/" + store; }
 
-    // --- Firestore auto-recovery wrapper (fixes iOS PWA "terminated" case) ---
+    // ---- Firestore auto-recovery (iOS PWA resume) ----
     async function withRecovery(op){
       try { return await op(); }
       catch (e) {
         const msg = String(e && (e.message || e)).toLowerCase();
         if (msg.includes('terminated')) {
-          // Reinitialize Firestore on a fresh app instance, then retry once
           try {
             if (!window._reApp) window._reApp = initializeApp(firebaseConfig, 're-' + Date.now());
             db = getFirestore(window._reApp);
@@ -229,6 +228,7 @@
       }
     }
 
+    // ---- CRUD helpers ----
     async function addItem(store, value) {
       if (!user) throw new Error("Sign in first");
       return await withRecovery(async () => {
@@ -262,6 +262,7 @@
       });
     }
 
+    // ---- UI helpers & rendering ----
     function fmtDate(date){ if(!date) return ""; const d=new Date(date); return d.toLocaleDateString()+" "+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); }
     function fmtDateOnly(date){ if(!date) return ""; const d=new Date(date); return d.toISOString().slice(0,10); }
     function dateAddDays(date, days){ const d=new Date(date||new Date()); d.setHours(0,0,0,0); d.setDate(d.getDate()+Number(days||0)); return d; }
@@ -272,8 +273,8 @@
       const nextDue = last ? dateAddDays(last, days) : new Date();
       const today = new Date(); today.setHours(0,0,0,0);
       const diff = Math.floor((nextDue - today)/(1000*60*60*24));
-      var status = "red"; if(last){ status = diff<=0 ? "red" : (diff<=7 ? "yellow" : "green"); }
-      return { nextDue: nextDue, diffDays: diff, status: status };
+      let status = "red"; if(last){ status = diff<=0 ? "red" : (diff<=7 ? "yellow" : "green"); }
+      return { nextDue, diffDays: diff, status };
     }
 
     function contactCardHTML(c, opts){
@@ -302,99 +303,102 @@
     async function renderToday(){
       const q = ($("#search").value||"").toLowerCase().trim();
       const statusFilter = $("#filter-status").value;
-      const contacts = (await getAll("contacts")).filter(function(c){ return c.active !== false; });
-      const enriched = contacts.map(function(c){ const e=computeStatus(c); const o={}; for (var k in c) o[k]=c[k]; for (var k2 in e) o[k2]=e[k2]; return o; })
-        .filter(function(c){
+      const contacts = (await getAll("contacts")).filter(c => c.active !== false);
+      const enriched = contacts.map(c => Object.assign({}, c, computeStatus(c)))
+        .filter(c => {
           const hay=(c.name+" "+(c.org||"")+" "+(c.location||"")).toLowerCase();
           return (!q || hay.includes(q)) && (statusFilter==="all" || c.status===statusFilter);
         })
-        .sort(function(a,b){
-          function score(s){ return s==="red"?3:s==="yellow"?2:1; }
+        .sort((a,b)=>{
+          const score = (s)=>s==="red"?3:s==="yellow"?2:1;
           const s = score(b.status)-score(a.status); if(s!==0) return s;
           const d = a.diffDays - b.diffDays; if(d!==0) return d;
           return (a.name||"").localeCompare(b.name||"");
         });
 
       const host=$("#today-list"); host.innerHTML="";
-      enriched.forEach(function(c){
+      enriched.forEach(c=>{
         const wrap=document.createElement("div");
-        wrap.innerHTML = contactCardHTML(c, {showArchive:false}); // Today: no Archive
+        wrap.innerHTML = contactCardHTML(c, {showArchive:false});
         host.appendChild(wrap.firstChild);
       });
 
-      host.querySelectorAll(".btn-edit").forEach(function(btn){ btn.addEventListener("click", async function(e){ const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id); showSection("view-contacts"); populateContactForm(c); });});
-      host.querySelectorAll(".btn-log-now").forEach(function(btn){ btn.addEventListener("click", async function(e){ const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id); await logVisitNow(c); });});
+      host.querySelectorAll(".btn-edit").forEach(btn=>btn.addEventListener("click", async e=>{
+        const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id);
+        showSection("view-contacts"); populateContactForm(c);
+      }));
+      host.querySelectorAll(".btn-log-now").forEach(btn=>btn.addEventListener("click", async e=>{
+        const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id); await logVisitNow(c);
+      }));
     }
 
     function populateContactForm(c){
-      document.getElementById("form-title").textContent = (c && c.id) ? "Edit Contact" : "Add Contact";
-      document.getElementById("contact-id").value = (c && c.id) ? c.id : "";
-      document.getElementById("name").value = (c && c.name) ? c.name : "";
-      document.getElementById("org").value = (c && c.org) ? c.org : "";
-      document.getElementById("location").value = (c && c.location) ? c.location : "";
-      document.getElementById("email").value = (c && c.email) ? c.email : "";
-      document.getElementById("phone").value = (c && c.phone) ? c.phone : "";
-      document.getElementById("frequency").value = (c && c.frequency) ? c.frequency : "Monthly";
-      document.getElementById("freqDays").value = (c && c.freqDays) ? c.freqDays : ({"Weekly":7,"Biweekly":14,"Monthly":30,"Quarterly":90}[document.getElementById("frequency").value]||30);
-      document.getElementById("lastVisit").value = (c && c.lastVisit) ? fmtDateOnly(c.lastVisit) : "";
-      document.getElementById("active").value = (c && c.active===false) ? "false" : "true";
-      document.getElementById("notes").value = (c && c.notes) ? c.notes : "";
+      $("#form-title").textContent = (c && c.id) ? "Edit Contact" : "Add Contact";
+      $("#contact-id").value = (c && c.id) ? c.id : "";
+      $("#name").value = c?.name || "";
+      $("#org").value = c?.org || "";
+      $("#location").value = c?.location || "";
+      $("#email").value = c?.email || "";
+      $("#phone").value = c?.phone || "";
+      $("#frequency").value = c?.frequency || "Monthly";
+      $("#freqDays").value = c?.freqDays || ({"Weekly":7,"Biweekly":14,"Monthly":30,"Quarterly":90}[$("#frequency").value]||30);
+      $("#lastVisit").value = c?.lastVisit ? fmtDateOnly(c.lastVisit) : "";
+      $("#active").value = (c && c.active===false) ? "false" : "true";
+      $("#notes").value = c?.notes || "";
     }
 
-    // Clear form helper (used by Quick Add & Reset)
     function clearContactForm(){
-      const form = document.getElementById("contact-form");
-      form.reset();
-      document.getElementById("form-title").textContent = "Add Contact";
-      document.getElementById("contact-id").value = "";
-      document.getElementById("frequency").value = "Monthly";
-      document.getElementById("freqDays").value = 30;
-      document.getElementById("active").value = "true";
+      const f=$("#contact-form"); f.reset();
+      $("#form-title").textContent = "Add Contact";
+      $("#contact-id").value = "";
+      $("#frequency").value = "Monthly";
+      $("#freqDays").value = 30;
+      $("#active").value = "true";
     }
 
     async function renderContactsList(){
-      const q = (document.getElementById("contact-search").value||"").toLowerCase().trim();
-      const contacts = (await getAll("contacts")).filter(function(c){ return c.active!==false; })
-        .sort(function(a,b){ return (a.name||"").localeCompare(b.name||""); });
-      const host = document.getElementById("contact-list"); host.innerHTML="";
-      contacts.filter(function(c){
+      const q = ($("#contact-search").value||"").toLowerCase().trim();
+      const contacts = (await getAll("contacts")).filter(c => c.active!==false)
+        .sort((a,b)=> (a.name||"").localeCompare(b.name||""));
+      const host = $("#contact-list"); host.innerHTML="";
+      contacts.filter(c=>{
         const hay=(c.name+" "+(c.org||"")+" "+(c.location||"")).toLowerCase();
         return !q || hay.includes(q);
-      }).forEach(function(c){
+      }).forEach(c=>{
         const cmp=computeStatus(c);
         const node=document.createElement("div");
         node.innerHTML=contactCardHTML(Object.assign({}, c, cmp), {showArchive:true});
         host.appendChild(node.firstChild);
       });
 
-      host.querySelectorAll(".btn-edit").forEach(function(btn){ btn.addEventListener("click", async function(e){ const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id); populateContactForm(c); });});
-      host.querySelectorAll(".btn-log-now").forEach(function(btn){ btn.addEventListener("click", async function(e){ const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id); await logVisitNow(c); });});
-      host.querySelectorAll(".btn-archive").forEach(function(btn){
-        btn.addEventListener("click", async function(e){
+      host.querySelectorAll(".btn-edit").forEach(btn=>btn.addEventListener("click", async e=>{
+        const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id); populateContactForm(c);
+      }));
+      host.querySelectorAll(".btn-log-now").forEach(btn=>btn.addEventListener("click", async e=>{
+        const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id); await logVisitNow(c);
+      }));
+      host.querySelectorAll(".btn-archive").forEach(btn=>{
+        btn.addEventListener("click", async e=>{
           const id=e.currentTarget.getAttribute("data-id");
-          const c=await getByKey("contacts", id);
-          if (!c) return;
+          const c=await getByKey("contacts", id); if (!c) return;
           const ok = confirm("Are you sure you want to remove this contact? This will archive them (hide from lists).");
           if (!ok) return;
-          c.active=false;
-          await putItem("contacts", c);
-          renderContactsList();
-          renderToday();
+          c.active=false; await putItem("contacts", c);
+          renderContactsList(); renderToday();
         });
       });
     }
 
     async function renderVisits(){
-      const q=(document.getElementById("visit-search").value||"").toLowerCase().trim();
-      const results = await Promise.all([getAll("contacts"), getAll("visits")]);
-      const contacts = results[0], visits = results[1];
-      const nameById = {}; contacts.forEach(function(c){ nameById[c.id]=c.name; });
-      const filtered = visits.filter(function(v){
-        const hay=( (nameById[v.contactId]||"") +" "+(v.notes||"")+" "+(v.nextSteps||"")+" "+(v.outcome||"") ).toLowerCase();
+      const q=$("#visit-search").value?.toLowerCase().trim()||"";
+      const [contacts, visits] = await Promise.all([getAll("contacts"), getAll("visits")]);
+      const nameById = {}; contacts.forEach(c=> nameById[c.id]=c.name);
+      const filtered = visits.filter(v=>{
+        const hay=((nameById[v.contactId]||"")+" "+(v.notes||"")+" "+(v.nextSteps||"")+" "+(v.outcome||"")).toLowerCase();
         return !q || hay.includes(q);
-      }).sort(function(a,b){ return new Date(b.visitDate) - new Date(a.visitDate); });
-      const host=document.getElementById("visit-list"); host.innerHTML="";
-      filtered.forEach(function(v){
+      }).sort((a,b)=> new Date(b.visitDate) - new Date(a.visitDate));
+      const host=$("#visit-list"); host.innerHTML="";
+      filtered.forEach(v=>{
         const div=document.createElement("div"); div.innerHTML =
           '<div class="card">\
             <div class="row" style="justify-content:space-between">\
@@ -411,115 +415,187 @@
       });
     }
 
+    // ---- Save / Log ----
     async function saveContactFromForm(e){
-      if (e && e.preventDefault) e.preventDefault();
-      const existingId = (document.getElementById("contact-id").value||"").trim();
-      const freq = document.getElementById("frequency").value;
+      e?.preventDefault?.();
+      const existingId = ($("#contact-id").value||"").trim();
+      const freq = $("#frequency").value;
       const record = {
-        name: document.getElementById("name").value.trim(),
-        org: document.getElementById("org").value.trim(),
-        location: document.getElementById("location").value.trim(),
-        email: document.getElementById("email").value.trim(),
-        phone: document.getElementById("phone").value.trim(),
+        name: $("#name").value.trim(),
+        org: $("#org").value.trim(),
+        location: $("#location").value.trim(),
+        email: $("#email").value.trim(),
+        phone: $("#phone").value.trim(),
         frequency: freq,
-        freqDays: Number(document.getElementById("freqDays").value || ({"Weekly":7,"Biweekly":14,"Monthly":30,"Quarterly":90}[freq]||30)),
-        lastVisit: document.getElementById("lastVisit").value ? new Date(document.getElementById("lastVisit").value).toISOString() : null,
-        notes: document.getElementById("notes").value.trim(),
-        active: document.getElementById("active").value === "true"
+        freqDays: Number($("#freqDays").value || ({"Weekly":7,"Biweekly":14,"Monthly":30,"Quarterly":90}[freq]||30)),
+        lastVisit: $("#lastVisit").value ? new Date($("#lastVisit").value).toISOString() : null,
+        notes: $("#notes").value.trim(),
+        active: $("#active").value === "true"
       };
       if (!record.name){ alert("Name is required."); return; }
-      if (existingId) { record.id = existingId; await putItem("contacts", record); document.getElementById("contact-id").value = existingId; }
-      else { const newId = await addItem("contacts", record); document.getElementById("contact-id").value = newId; }
+      if (existingId) { record.id = existingId; await putItem("contacts", record); $("#contact-id").value = existingId; }
+      else { const newId = await addItem("contacts", record); $("#contact-id").value = newId; }
       await Promise.all([renderToday(), renderContactsList(), refreshVisitContactDropdown()]);
       showSection("view-today");
     }
 
     async function logVisitNow(contact){
-      const notes = prompt("Notes for " + (contact && contact.name ? contact.name : "contact") + "?", "");
+      const notes = prompt("Notes for " + (contact?.name || "contact") + "?", "");
       const visit={ contactId: contact.id, visitDate: new Date().toISOString(), notes: notes||"", outcome:"Follow-up", nextSteps:"", createdBy:"" };
       await addItem("visits", visit);
       contact.lastVisit = visit.visitDate; await putItem("contacts", contact);
       await Promise.all([renderToday(), renderVisits()]);
     }
+
     async function saveVisitFromForm(e){
-      if (e && e.preventDefault) e.preventDefault();
-      const contactId = document.getElementById("visit-contact").value;
+      e?.preventDefault?.();
+      const contactId = $("#visit-contact").value;
       if (!contactId){ alert("Pick a contact."); return; }
-      const dt = document.getElementById("visit-date").value ? new Date(document.getElementById("visit-date").value).toISOString() : new Date().toISOString();
-      const visit={ contactId: contactId, visitDate: dt, notes: document.getElementById("visit-notes").value.trim(), outcome: document.getElementById("visit-outcome").value, nextSteps: document.getElementById("visit-next").value.trim(), createdBy: document.getElementById("visit-createdBy").value.trim() };
+      const dt = $("#visit-date").value ? new Date($("#visit-date").value).toISOString() : new Date().toISOString();
+      const visit={ contactId: contactId, visitDate: dt, notes: $("#visit-notes").value.trim(), outcome: $("#visit-outcome").value, nextSteps: $("#visit-next").value.trim(), createdBy: $("#visit-createdBy").value.trim() };
       await addItem("visits", visit);
       const c = await getByKey("contacts", contactId); c.lastVisit = dt; await putItem("contacts", c);
-      document.getElementById("visit-form").reset(); await Promise.all([renderToday(), renderVisits()]);
+      $("#visit-form").reset(); await Promise.all([renderToday(), renderVisits()]);
     }
     async function refreshVisitContactDropdown(){
-      const sel=document.getElementById("visit-contact");
-      const contacts=(await getAll("contacts")).filter(function(c){ return c.active!==false; })
-        .sort(function(a,b){ return (a.name||"").localeCompare(b.name||""); });
-      sel.innerHTML='<option value="">— Select —</option>' + contacts.map(function(c){ return '<option value="'+c.id+'">'+c.name+'</option>'; }).join("");
+      const sel=$("#visit-contact");
+      const contacts=(await getAll("contacts")).filter(c=>c.active!==false).sort((a,b)=> (a.name||"").localeCompare(b.name||""));
+      sel.innerHTML='<option value="">— Select —</option>'+contacts.map(c=>'<option value="'+c.id+'">'+c.name+'</option>').join("");
     }
 
-    function showSection(id){
-      ["view-today","view-contacts","view-log"].forEach(function(v){ document.getElementById(v).classList.add("hidden"); });
-      document.getElementById(id).classList.remove("hidden");
+    // ---- Export / Import (RESTORED) ----
+    async function exportJSON(){
+      const [contacts, visits] = await Promise.all([getAll("contacts"), getAll("visits")]);
+      const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), contacts, visits }, null, 2)], {type:"application/json"});
+      const a = document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="visit-tracker-backup.json"; a.click(); URL.revokeObjectURL(a.href);
     }
+    async function importJSON(file){
+      const text=await file.text(); const data=JSON.parse(text);
+      if(!data.contacts||!data.visits){ alert("Invalid file."); return; }
+      if(!confirm("Importing will MERGE with existing records. Continue?")) return;
+      for (const c of data.contacts){ const copy=Object.assign({}, c); delete copy.id; await addItem("contacts", copy); }
+      const all=await getAll("contacts"); const byName={}; all.forEach(c=>{ byName[c.name]=c.id; });
+      for (const v of data.visits){
+        const name=(data.contacts.find(c=>c.id===v.contactId)||{}).name;
+        const newId=name?byName[name]:null; if(newId){ const copy2=Object.assign({}, v); delete copy2.id; copy2.contactId=newId; await addItem("visits", copy2); }
+      }
+      await Promise.all([renderToday(), renderContactsList(), renderVisits(), refreshVisitContactDropdown()]);
+      alert("Import complete.");
+    }
+    async function importCSV(file){
+      if (!user){ alert("Sign in first."); return; }
+      const existing = await getAll("contacts");
+      const byKey = {}; existing.forEach(c=>{ byKey[((c.name||"")+"|"+(c.org||"")).toLowerCase()]=true; });
+
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: async (results)=>{
+          const rows = results.data || [];
+          if (!rows.length){ alert("No rows found."); return; }
+          const get=(o,...keys)=>{ for (const k of keys){ if (o[k]!==undefined && o[k]!==null && String(o[k]).trim()!=="") return String(o[k]).trim(); } return ""; };
+          const toAdd=[];
+          for (const r of rows){
+            const first=get(r,'First Name','FirstName','first_name','First');
+            const last =get(r,'Last Name','LastName','last_name','Last');
+            const name =get(r,'Name') || (first || last ? (first+" "+last).trim() : "");
+            if (!name) continue;
+            const org =get(r,'Account Name','Company','Organization','Account');
+            const email=get(r,'Email','Work Email','Primary Email');
+            const phone=get(r,'Phone','Work Phone','Mobile','Mobile Phone');
+            const street=get(r,'Mailing Street','Street');
+            const city  =get(r,'Mailing City','City');
+            const state =get(r,'Mailing State/Province','Mailing State','State/Province','State');
+            const zip   =get(r,'Mailing Postal Code','Postal Code','Zip');
+            const country=get(r,'Mailing Country','Country');
+            const location=[street,city,state,zip,country].filter(Boolean).join(', ');
+            const lastVisitStr=get(r,'Last Activity Date','Last Visit','LastContact','Last Contact Date');
+            const lastVisit= lastVisitStr ? new Date(lastVisitStr).toISOString() : null;
+            const k=(name+'|'+(org||'')).toLowerCase();
+            if (byKey[k]) continue;
+            toAdd.push({ name, org, location, email, phone, frequency:'Monthly', freqDays:30, lastVisit, notes:'', active:true });
+          }
+          if (!toAdd.length){ alert("Everything already exists (Name+Org) or no valid rows."); return; }
+          if (!confirm(`Import ${toAdd.length} contacts into your account? (Duplicates by Name+Org are skipped)`)) return;
+          for (const c of toAdd){ await addItem("contacts", c); }
+          await Promise.all([renderToday(), renderContactsList(), refreshVisitContactDropdown()]);
+          alert("CSV import complete.");
+        },
+        error: (err)=> alert("CSV parse error: "+err.message)
+      });
+    }
+
+    // ---- Navigation / Events ----
+    function showSection(id){ ["view-today","view-contacts","view-log"].forEach(v=>document.getElementById(v).classList.add("hidden")); document.getElementById(id).classList.remove("hidden"); }
 
     function wireEvents(){
-      document.getElementById("btn-show-today").addEventListener("click", function(){ showSection("view-today"); renderToday(); });
-      document.getElementById("btn-show-contacts").addEventListener("click", function(){ showSection("view-contacts"); renderContactsList(); });
-      document.getElementById("btn-show-log").addEventListener("click", function(){ showSection("view-log"); renderVisits(); });
-      document.getElementById("btn-add-quick").addEventListener("click", function(){
+      $("#btn-show-today").addEventListener("click", ()=>{ showSection("view-today"); renderToday(); });
+      $("#btn-show-contacts").addEventListener("click", ()=>{ showSection("view-contacts"); renderContactsList(); });
+      $("#btn-show-log").addEventListener("click", ()=>{ showSection("view-log"); renderVisits(); });
+
+      $("#btn-add-quick").addEventListener("click", ()=>{
         showSection("view-contacts");
-        clearContactForm();                 // <<< clears previous contact
-        document.getElementById("name").focus();
+        clearContactForm();
+        $("#name").focus();
         window.scrollTo({top:0, behavior:'smooth'});
       });
 
-      document.getElementById("btn-export").addEventListener("click", exportJSON);
-      document.getElementById("btn-import-json").addEventListener("click", function(){ document.getElementById("import-json-file").click(); });
-      document.getElementById("import-json-file").addEventListener("change", function(e){ if(e.target.files[0]) importJSON(e.target.files[0]); });
+      $("#btn-export").addEventListener("click", exportJSON);
+      $("#btn-import-json").addEventListener("click", ()=> $("#import-json-file").click());
+      $("#import-json-file").addEventListener("change", (e)=>{ if(e.target.files[0]) importJSON(e.target.files[0]); });
 
-      document.getElementById("btn-import-csv").addEventListener("click", function(){ document.getElementById("import-csv-file").click(); });
-      document.getElementById("import-csv-file").addEventListener("change", function(e){ if(e.target.files[0]) importCSV(e.target.files[0]); });
+      $("#btn-import-csv").addEventListener("click", ()=> $("#import-csv-file").click());
+      $("#import-csv-file").addEventListener("change", (e)=>{ if(e.target.files[0]) importCSV(e.target.files[0]); });
 
-      document.getElementById("contact-form").addEventListener("submit", saveContactFromForm);
-      document.getElementById("btn-reset").addEventListener("click", clearContactForm); // use the strong reset
-      document.getElementById("frequency").addEventListener("change", function(){ var f=document.getElementById("frequency").value; document.getElementById("freqDays").value = ({"Weekly":7,"Biweekly":14,"Monthly":30,"Quarterly":90}[f]||Number(document.getElementById("freqDays").value||30)); });
-      document.getElementById("visit-form").addEventListener("submit", saveVisitFromForm);
-      document.getElementById("btn-quick-today").addEventListener("click", async function(){ const id=document.getElementById("visit-contact").value; if(!id){ alert("Pick a contact."); return; } const c=await getByKey("contacts", id); await logVisitNow(c); document.getElementById("visit-form").reset(); });
+      $("#contact-form").addEventListener("submit", saveContactFromForm);
+      $("#btn-reset").addEventListener("click", clearContactForm);
+      $("#frequency").addEventListener("change", ()=>{ const f=$("#frequency").value; $("#freqDays").value = ({"Weekly":7,"Biweekly":14,"Monthly":30,"Quarterly":90}[f]||Number($("#freqDays").value||30)); });
+      $("#visit-form").addEventListener("submit", saveVisitFromForm);
+      $("#btn-quick-today").addEventListener("click", async ()=>{
+        const id=$("#visit-contact").value; if(!id){ alert("Pick a contact."); return; }
+        const c=await getByKey("contacts", id); await logVisitNow(c); $("#visit-form").reset();
+      });
 
-      document.getElementById("search").addEventListener("input", renderToday);
-      document.getElementById("filter-status").addEventListener("change", renderToday);
+      $("#search").addEventListener("input", renderToday);
+      $("#filter-status").addEventListener("change", renderToday);
 
-      document.getElementById("btn-signin").addEventListener("click", async function(){ const email=document.getElementById("auth-email").value.trim(); const pass=document.getElementById("auth-pass").value; try { await signInWithEmailAndPassword(auth, email, pass); } catch (e) { alert("Sign in failed. If you don't have an account, tap Create."); } });
-      document.getElementById("btn-signup").addEventListener("click", async function(){ const email=document.getElementById("auth-email").value.trim(); const pass=document.getElementById("auth-pass").value; try { await createUserWithEmailAndPassword(auth, email, pass); } catch (e) { alert("Create failed: "+e.message); } });
-      document.getElementById("btn-signout").addEventListener("click", async function(){ await signOut(auth); });
+      $("#btn-signin").addEventListener("click", async ()=>{
+        const email=$("#auth-email").value.trim(); const pass=$("#auth-pass").value;
+        try { await signInWithEmailAndPassword(auth, email, pass); } catch { alert("Sign in failed. If you don't have an account, tap Create."); }
+      });
+      $("#btn-signup").addEventListener("click", async ()=>{
+        const email=$("#auth-email").value.trim(); const pass=$("#auth-pass").value;
+        try { await createUserWithEmailAndPassword(auth, email, pass); } catch (e) { alert("Create failed: "+e.message); }
+      });
+      $("#btn-signout").addEventListener("click", async ()=>{ await signOut(auth); });
     }
+
     function updateAuthUI(){
-      const una = document.getElementById("authbar-unauthed");
-      const aut = document.getElementById("authbar-authed");
-      if (user) { una.classList.add("hidden"); aut.classList.remove("hidden"); document.getElementById("whoami").textContent = user.email; }
+      const una = $("#authbar-unauthed");
+      const aut = $("#authbar-authed");
+      if (user) { una.classList.add("hidden"); aut.classList.remove("hidden"); $("#whoami").textContent = user.email; }
       else { una.classList.remove("hidden"); aut.classList.add("hidden"); }
     }
-    function clearUI(){ document.getElementById("today-list").innerHTML=""; document.getElementById("contact-list").innerHTML=""; document.getElementById("visit-list").innerHTML=""; }
+    function clearUI(){ $("#today-list").innerHTML=""; $("#contact-list").innerHTML=""; $("#visit-list").innerHTML=""; }
     function subscribeRealtime(){
-      onSnapshot(collection(db, colPath("contacts")), function(){ renderToday(); renderContactsList(); refreshVisitContactDropdown(); });
-      onSnapshot(collection(db, colPath("visits")), function(){ renderVisits(); });
+      onSnapshot(collection(db, colPath("contacts")), ()=>{ renderToday(); renderContactsList(); refreshVisitContactDropdown(); });
+      onSnapshot(collection(db, colPath("visits")), ()=>{ renderVisits(); });
     }
 
     (async function init(){
       if (!validConfig(firebaseConfig)) return;
       app = initializeApp(firebaseConfig); auth = getAuth(app); db = getFirestore(app);
-      try { await enableIndexedDbPersistence(db); } catch (e) {}
+      try { await enableIndexedDbPersistence(db); } catch {}
       wireEvents();
-      onAuthStateChanged(auth, function(u){ user=u||null; updateAuthUI(); if(user){ subscribeRealtime(); loadAllAndRender(); } else { clearUI(); } });
+      onAuthStateChanged(auth, (u)=>{ user=u||null; updateAuthUI(); if(user){ subscribeRealtime(); loadAllAndRender(); } else { clearUI(); } });
     })();
 
     async function loadAllAndRender(){ await Promise.all([renderToday(), renderContactsList(), renderVisits(), refreshVisitContactDropdown()]); showSection("view-today"); }
   </script>
 
   <script>
-    window.addEventListener('unhandledrejection', function(e){ alert('Error (promise): ' + (e.reason && (e.reason.message || e.reason))); });
-    window.addEventListener('error', function(e){ alert('Error (script): ' + e.message + (e.filename?(' @ '+e.filename+':'+e.lineno+':'+e.colno):'')); });
+    window.addEventListener('unhandledrejection', (e)=>{ alert('Error (promise): ' + (e.reason && (e.reason.message || e.reason))); });
+    window.addEventListener('error', (e)=>{ alert('Error (script): ' + e.message + (e.filename?(' @ '+e.filename+':'+e.lineno+':'+e.colno):'')); });
   </script>
 </body>
 </html>
