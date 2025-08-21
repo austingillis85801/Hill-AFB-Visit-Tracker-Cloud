@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hill AFB Visit Tracker (Cloud Sync) — v7</title>
+  <title>Hill AFB Visit Tracker (Cloud Sync) — v8</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="VisitTracker">
@@ -15,7 +15,7 @@
     *{box-sizing:border-box}
     body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji";background:var(--bg);color:var(--text)}
 
-    /* Header — extra compact */
+    /* Header — compact */
     header{position:sticky;top:0;z-index:5;background:linear-gradient(180deg,var(--blue),#3a7cf0);color:#fff;border-bottom:1px solid var(--border);padding:6px 10px;display:flex;flex-direction:column;gap:6px}
     .toprow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
     header h1{font-size:16px;margin:0}
@@ -50,7 +50,7 @@
       .col-4{grid-column:span 4}.col-6{grid-column:span 6}.col-8{grid-column:span 8}.col-12{grid-column:span 12}
     }
 
-    /* Cards — smaller */
+    /* Cards — compact */
     .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
     .card h3{margin:0 0 4px 0;font-size:16px}
     .muted{color:var(--muted);font-size:12px}
@@ -68,7 +68,6 @@
 
     /* Smaller action buttons on cards */
     .btn-ghost{background:#fff;border:1px solid var(--border);border-radius:999px;padding:7px 14px}
-    .btn-ghost.danger{border-color:#c9b; color:#a00}
 
     /* Lists: responsive columns */
     #today-list,#visit-list,#contact-list{display:grid;grid-template-columns:1fr;gap:10px}
@@ -81,7 +80,7 @@
 <body>
   <header>
     <div class="toprow">
-      <h1>Hill AFB Visit Tracker (Cloud Sync) — v7</h1>
+      <h1>Hill AFB Visit Tracker (Cloud Sync) — v8</h1>
       <span class="tagline">Cloud sync • Offline • Local cache</span>
 
       <!-- Signed OUT -->
@@ -203,7 +202,7 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function() {
-        navigator.serviceWorker.register('sw.js?v=7'); // bump to fetch latest
+        navigator.serviceWorker.register('sw.js?v=8'); // bump to fetch latest
       });
     }
   </script>
@@ -268,7 +267,10 @@
       return { nextDue: nextDue, diffDays: diff, status: status };
     }
 
-    function contactCardHTML(c){
+    // Build a contact card; control whether Archive button shows
+    function contactCardHTML(c, opts){
+      opts = opts || {};
+      const showArchive = !!opts.showArchive;
       return '<div class="card '+c.status+'">\
         <div class="contact-row">\
           <div style="flex:1 1 auto;min-width:220px">\
@@ -282,9 +284,9 @@
           </div>\
           <div class="contact-actions">\
             <button data-id="'+c.id+'" class="btn-ghost btn-log-now">Log</button>\
-            <button data-id="'+c.id+'" class="btn-ghost btn-edit">Edit</button>\
-            <button data-id="'+c.id+'" class="btn-ghost btn-mark-inactive">Archive</button>\
-          </div>\
+            <button data-id="'+c.id+'" class="btn-ghost btn-edit">Edit</button>' +
+            (showArchive ? ' <button data-id="'+c.id+'" class="btn-ghost btn-archive">Archive</button>' : '') +
+          '</div>\
         </div>\
       </div>';
     }
@@ -306,11 +308,15 @@
         });
 
       const host=$("#today-list"); host.innerHTML="";
-      enriched.forEach(function(c){ const wrap=document.createElement("div"); wrap.innerHTML=contactCardHTML(c); host.appendChild(wrap.firstChild); });
+      enriched.forEach(function(c){
+        const wrap=document.createElement("div");
+        wrap.innerHTML = contactCardHTML(c, {showArchive:false}); // no Archive on Today
+        host.appendChild(wrap.firstChild);
+      });
 
       host.querySelectorAll(".btn-edit").forEach(function(btn){ btn.addEventListener("click", async function(e){ const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id); showSection("view-contacts"); populateContactForm(c); });});
       host.querySelectorAll(".btn-log-now").forEach(function(btn){ btn.addEventListener("click", async function(e){ const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id); await logVisitNow(c); });});
-      host.querySelectorAll(".btn-mark-inactive").forEach(function(btn){ btn.addEventListener("click", async function(e){ const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id); c.active=false; await putItem("contacts", c); renderToday(); });});
+      // No Archive buttons on Today, so no handler needed here
     }
 
     function populateContactForm(c){
@@ -337,12 +343,27 @@
         const hay=(c.name+" "+(c.org||"")+" "+(c.location||"")).toLowerCase();
         return !q || hay.includes(q);
       }).forEach(function(c){
-        const cmp=computeStatus(c); const node=document.createElement("div"); node.innerHTML=contactCardHTML(Object.assign({}, c, cmp)); host.appendChild(node.firstChild);
+        const cmp=computeStatus(c);
+        const node=document.createElement("div");
+        node.innerHTML=contactCardHTML(Object.assign({}, c, cmp), {showArchive:true}); // Archive shown here
+        host.appendChild(node.firstChild);
       });
 
       host.querySelectorAll(".btn-edit").forEach(function(btn){ btn.addEventListener("click", async function(e){ const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id); populateContactForm(c); });});
       host.querySelectorAll(".btn-log-now").forEach(function(btn){ btn.addEventListener("click", async function(e){ const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id); await logVisitNow(c); });});
-      host.querySelectorAll(".btn-mark-inactive,.btn-archive").forEach(function(btn){ btn.addEventListener("click", async function(e){ const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id); c.active=false; await putItem("contacts", c); renderContactsList(); });});
+      host.querySelectorAll(".btn-archive").forEach(function(btn){
+        btn.addEventListener("click", async function(e){
+          const id=e.currentTarget.getAttribute("data-id");
+          const c=await getByKey("contacts", id);
+          if (!c) return;
+          const ok = confirm("Are you sure you want to remove this contact? This will archive them (hide from lists).");
+          if (!ok) return;
+          c.active=false;
+          await putItem("contacts", c);
+          renderContactsList();
+          renderToday();
+        });
+      });
     }
 
     async function renderVisits(){
