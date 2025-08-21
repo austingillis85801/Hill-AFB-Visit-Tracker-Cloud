@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hill AFB Visit Tracker (Cloud Sync) — v6</title>
+  <title>Hill AFB Visit Tracker (Cloud Sync) — v7</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="VisitTracker">
@@ -15,92 +15,98 @@
     *{box-sizing:border-box}
     body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji";background:var(--bg);color:var(--text)}
 
-    /* Header compact */
-    header{position:sticky;top:0;z-index:5;background:linear-gradient(180deg,var(--blue),#3a7cf0);color:#fff;border-bottom:1px solid var(--border);padding:8px 12px;display:flex;flex-direction:column;gap:6px}
-    .toprow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-    header h1{font-size:18px;margin:0}
-    .tagline{color:#e6eeff;font-size:12px}
-    @media (max-width: 480px){ .tagline{display:none} }
+    /* Header — extra compact */
+    header{position:sticky;top:0;z-index:5;background:linear-gradient(180deg,var(--blue),#3a7cf0);color:#fff;border-bottom:1px solid var(--border);padding:6px 10px;display:flex;flex-direction:column;gap:6px}
+    .toprow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    header h1{font-size:16px;margin:0}
+    .tagline{color:#e6eeff;font-size:11px}
+    @media (max-width: 520px){ .tagline{display:none} }
     .right{margin-left:auto}
-    .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-    .ghost{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.4);border-radius:999px;padding:6px 10px}
-    .navchips{display:flex;gap:8px;flex-wrap:wrap}
-    .navchips button,.navchips label{border-radius:999px}
+    .row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+    .chip{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.45);border-radius:999px;padding:5px 10px;font-size:14px}
+    .chip.strong{background:#1f6feb;border-color:#1f6feb}
+    .authbar input{border-color:rgba(255,255,255,.5);background:rgba(255,255,255,.1);color:#fff;border-radius:999px;padding:6px 10px;font-size:14px}
+    .authbar input::placeholder{color:#eef}
+    .whoami{font-size:12px;color:#e6eeff;margin-right:2px}
+    @media (max-width:430px){ .whoami{display:none} }
     .hidden{display:none!important}
 
-    main{padding:16px;max-width:1100px;margin:0 auto}
-    .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+    /* Nav chips row */
+    .navchips{display:flex;gap:8px;flex-wrap:wrap}
 
-    /* Controls: don’t force 100% width everywhere (only in form fields) */
-    button,select,input,textarea{font:inherit;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:#fff;color:var(--text)}
+    main{padding:14px;max-width:1100px;margin:0 auto}
+    .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+
+    /* Inputs */
+    button,select,input,textarea{font:inherit;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:#fff;color:#222}
     .field input,.field select,.field textarea{width:100%}
-    label{display:block;margin:2px 0 6px 2px;font-weight:600}
+    label{display:block;margin:0 0 5px 2px;font-weight:600}
 
     /* Mobile-first grids */
-    .grid{display:grid;grid-template-columns:1fr;gap:12px}
+    .grid{display:grid;grid-template-columns:1fr;gap:10px}
     .col-4,.col-6,.col-8,.col-12{grid-column:span 1}
     @media (min-width: 900px){
       .grid{grid-template-columns:repeat(12,minmax(0,1fr))}
       .col-4{grid-column:span 4}.col-6{grid-column:span 6}.col-8{grid-column:span 8}.col-12{grid-column:span 12}
     }
 
-    .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
-    .card h3{margin:0 0 6px 0;font-size:18px}
+    /* Cards — smaller */
+    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+    .card h3{margin:0 0 4px 0;font-size:16px}
     .muted{color:var(--muted);font-size:12px}
 
     /* Today/Contacts cards */
     .card.red{border-left:6px solid var(--red)}
     .card.yellow{border-left:6px solid var(--yellow)}
     .card.green{border-left:6px solid var(--green)}
-    .contact-row{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
-    .contact-actions{display:flex;gap:8px;flex-wrap:wrap}
-    .status-dot{width:10px;height:10px;border-radius:10px;display:inline-block}
-    .green{background:var(--green)}.yellow{background:var(--yellow)}.red{background:var(--red)}
-    .pill{font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid var(--border);background:#fff;display:inline-block}
-    .pill.red{border-color:var(--red);color:var(--red)}.pill.yellow{border-color:var(--yellow);color:var(--yellow)}.pill.green{border-color:var(--green);color:var(--green)}
-    .nowrap{white-space:nowrap}
-    .footer{margin-top:24px;color:var(--muted);font-size:12px}
+    .contact-row{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
+    .contact-actions{display:flex;gap:6px;flex-wrap:wrap}
+    .pill{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--border);background:#fff;display:inline-block}
+    .pill.red{border-color:var(--red);color:var(--red)} .pill.yellow{border-color:var(--yellow);color:var(--yellow)} .pill.green{border-color:var(--green);color:var(--green)}
+    .meta-line{display:flex;gap:6px;align-items:center;flex-wrap:nowrap;overflow:auto;scrollbar-width:none}
+    .meta-line::-webkit-scrollbar{display:none}
+
+    /* Smaller action buttons on cards */
+    .btn-ghost{background:#fff;border:1px solid var(--border);border-radius:999px;padding:7px 14px}
+    .btn-ghost.danger{border-color:#c9b; color:#a00}
 
     /* Lists: responsive columns */
-    #today-list,#visit-list,#contact-list{display:grid;grid-template-columns:1fr;gap:12px}
+    #today-list,#visit-list,#contact-list{display:grid;grid-template-columns:1fr;gap:10px}
     @media (min-width:600px){ #today-list,#contact-list{grid-template-columns:1fr 1fr} }
-    @media (min-width:1000px){ #today-list,#contact-list{grid-template-columns:1fr 1fr 1fr} }
+    @media (min-width:1100px){ #today-list,#contact-list{grid-template-columns:1fr 1fr 1fr} }
 
-    .authbar input{border-color:rgba(255,255,255,.5);background:rgba(255,255,255,.1);color:#fff;width:140px}
-    .authbar input::placeholder{color:#eef}
-    .whoami{font-size:12px;color:#e6eeff}
-    @media (max-width:420px){ .whoami{display:none} }
+    .footer{margin-top:16px;color:var(--muted);font-size:12px}
   </style>
 </head>
 <body>
   <header>
     <div class="toprow">
-      <h1>Hill AFB Visit Tracker (Cloud Sync) — v6</h1>
+      <h1>Hill AFB Visit Tracker (Cloud Sync) — v7</h1>
       <span class="tagline">Cloud sync • Offline • Local cache</span>
 
       <!-- Signed OUT -->
       <div class="right row authbar" id="authbar-unauthed">
         <input id="auth-email" placeholder="email" autocapitalize="off">
         <input id="auth-pass" placeholder="password" type="password">
-        <button id="btn-signin" class="ghost">Sign in</button>
-        <button id="btn-signup" class="ghost">Create</button>
+        <button id="btn-signin" class="chip">Sign in</button>
+        <button id="btn-signup" class="chip">Create</button>
       </div>
 
       <!-- Signed IN -->
       <div class="right row authbar hidden" id="authbar-authed">
         <span id="whoami" class="whoami"></span>
-        <button id="btn-signout" class="ghost">Sign out</button>
+        <button id="btn-export" class="chip">Export</button>
+        <button id="btn-import" class="chip">Import JSON</button>
+        <input id="import-file" type="file" accept="application/json" class="hidden">
+        <button id="btn-signout" class="chip strong">Sign out</button>
       </div>
     </div>
 
     <!-- Compact nav chips -->
     <div class="navchips" id="nav-controls">
-      <button id="btn-show-today" class="ghost">Today</button>
-      <button id="btn-show-contacts" class="ghost">Contacts</button>
-      <button id="btn-show-log" class="ghost">Log Visit</button>
-      <button id="btn-export" class="ghost">Export</button>
-      <label for="import-file" class="ghost" style="cursor:pointer">Import JSON</label>
-      <input id="import-file" type="file" accept="application/json" class="hidden">
+      <button id="btn-show-today" class="chip">Today</button>
+      <button id="btn-show-contacts" class="chip">Contacts</button>
+      <button id="btn-show-log" class="chip">Log Visit</button>
     </div>
   </header>
 
@@ -114,7 +120,7 @@
           <option value="yellow">Due this week</option>
           <option value="green">Not due</option>
         </select>
-        <button id="btn-add-quick" class="ghost" style="background:#1f6feb;border-color:#1f6feb;color:#fff">+ Quick add</button>
+        <button id="btn-add-quick" class="chip strong">+ Quick add</button>
       </div>
       <div id="today-list"></div>
       <div class="footer">Status rules: <span class="pill red">Past due</span> ≤ today • <span class="pill yellow">Due this week</span> within 7 days • <span class="pill green">Not due</span> &gt; 7 days.</div>
@@ -144,8 +150,8 @@
               </div>
               <div class="col-12 field"><label>Notes</label><textarea id="notes" rows="3"></textarea></div>
               <div class="col-12 row" style="justify-content:flex-start">
-                <button class="ghost" style="background:#1f6feb;border-color:#1f6feb;color:#fff" type="submit" id="btn-save-contact">Save</button>
-                <button type="button" id="btn-reset" class="ghost">Reset</button>
+                <button class="chip strong" type="submit" id="btn-save-contact">Save</button>
+                <button type="button" id="btn-reset" class="chip">Reset</button>
                 <span class="muted" style="margin-left:auto">Tip: set Frequency to Custom for exact days.</span>
               </div>
             </div>
@@ -177,8 +183,8 @@
               <div class="col-12 field"><label>Created By</label><input id="visit-createdBy" placeholder="GAR name or email"></div>
             </div>
             <div class="row" style="margin-top:8px">
-              <button class="ghost" style="background:#1f6feb;border-color:#1f6feb;color:#fff" type="submit">Save Visit</button>
-              <button type="button" id="btn-quick-today" class="ghost">Mark as seen now</button>
+              <button class="chip strong" type="submit">Save Visit</button>
+              <button type="button" id="btn-quick-today" class="chip">Mark as seen now</button>
             </div>
           </form>
         </div>
@@ -197,12 +203,12 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function() {
-        navigator.serviceWorker.register('sw.js?v=6'); // versioned so updates stick
+        navigator.serviceWorker.register('sw.js?v=7'); // bump to fetch latest
       });
     }
   </script>
 
-  <!-- Main app (same logic; iPhone-safe JS) -->
+  <!-- Main app -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import { getFirestore, enableIndexedDbPersistence, collection, addDoc, setDoc, doc, getDocs, getDoc, query, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -268,16 +274,16 @@
           <div style="flex:1 1 auto;min-width:220px">\
             <h3>'+ (c.name||"") +'</h3>\
             <div class="muted">'+ ((c.org||"") + (c.org&&c.location?" • ":"") + (c.location||"")) +'</div>\
-            <div class="row" style="margin-top:6px">\
+            <div class="meta-line" style="margin-top:6px">\
               <span class="pill '+c.status+'">'+(c.status==="red"?"Past due":(c.status==="yellow"?"Due this week":"Not due"))+'</span>\
-              <span class="pill">Next due: '+ fmtDateOnly(c.nextDue) +'</span>\
+              <span class="pill">Due: '+ fmtDateOnly(c.nextDue) +'</span>\
               <span class="pill">Freq: '+ (c.frequency||"") + (c.frequency==="Custom"?" ("+c.freqDays+"d)":"") +'</span>\
             </div>\
           </div>\
           <div class="contact-actions">\
-            <button data-id="'+c.id+'" class="ghost btn-log-now">Log</button>\
-            <button data-id="'+c.id+'" class="ghost btn-edit">Edit</button>\
-            <button data-id="'+c.id+'" class="ghost btn-mark-inactive">Archive</button>\
+            <button data-id="'+c.id+'" class="btn-ghost btn-log-now">Log</button>\
+            <button data-id="'+c.id+'" class="btn-ghost btn-edit">Edit</button>\
+            <button data-id="'+c.id+'" class="btn-ghost btn-mark-inactive">Archive</button>\
           </div>\
         </div>\
       </div>';
@@ -356,8 +362,8 @@
               <h3>'+ (nameById[v.contactId]||"Unknown contact") +'</h3>\
               <span class="muted">'+ fmtDate(v.visitDate) +'</span>\
             </div>\
-            <div class="row" style="gap:12px">\
-              <span class="pill nowrap">'+ (v.outcome||"") +'</span>\
+            <div class="row" style="gap:10px">\
+              <span class="pill">'+ (v.outcome||"") +'</span>\
               '+ (v.nextSteps?('<span class="pill">Next: '+v.nextSteps+'</span>'):'') +'\
               '+ (v.createdBy?('<span class="pill">By: '+v.createdBy+'</span>'):'') +'\
             </div>'+ (v.notes?('<div style="margin-top:6px">'+v.notes+'</div>'):'') +'\
@@ -412,30 +418,36 @@
         .sort(function(a,b){ return (a.name||"").localeCompare(b.name||""); });
       sel.innerHTML='<option value="">— Select —</option>' + contacts.map(function(c){ return '<option value="'+c.id+'">'+c.name+'</option>'; }).join("");
     }
+
     function showSection(id){
       ["view-today","view-contacts","view-log"].forEach(function(v){ document.getElementById(v).classList.add("hidden"); });
       document.getElementById(id).classList.remove("hidden");
     }
+
     function wireEvents(){
+      // Nav
       document.getElementById("btn-show-today").addEventListener("click", function(){ showSection("view-today"); renderToday(); });
       document.getElementById("btn-show-contacts").addEventListener("click", function(){ showSection("view-contacts"); renderContactsList(); });
       document.getElementById("btn-show-log").addEventListener("click", function(){ showSection("view-log"); renderVisits(); });
       document.getElementById("btn-add-quick").addEventListener("click", function(){ showSection("view-contacts"); document.getElementById("name").focus(); });
 
+      // Backup
       document.getElementById("btn-export").addEventListener("click", exportJSON);
+      document.getElementById("btn-import").addEventListener("click", function(){ document.getElementById("import-file").click(); });
       document.getElementById("import-file").addEventListener("change", function(e){ if(e.target.files[0]) importJSON(e.target.files[0]); });
 
+      // Forms
       document.getElementById("contact-form").addEventListener("submit", saveContactFromForm);
       document.getElementById("btn-reset").addEventListener("click", function(){ document.getElementById("contact-form").reset(); document.getElementById("form-title").textContent="Add Contact"; });
       document.getElementById("frequency").addEventListener("change", function(){ var f=document.getElementById("frequency").value; document.getElementById("freqDays").value = ({"Weekly":7,"Biweekly":14,"Monthly":30,"Quarterly":90}[f]||Number(document.getElementById("freqDays").value||30)); });
       document.getElementById("visit-form").addEventListener("submit", saveVisitFromForm);
       document.getElementById("btn-quick-today").addEventListener("click", async function(){ const id=document.getElementById("visit-contact").value; if(!id){ alert("Pick a contact."); return; } const c=await getByKey("contacts", id); await logVisitNow(c); document.getElementById("visit-form").reset(); });
 
+      // Filters
       document.getElementById("search").addEventListener("input", renderToday);
       document.getElementById("filter-status").addEventListener("change", renderToday);
-      document.getElementById("contact-search").addEventListener("input", renderContactsList);
-      document.getElementById("visit-search").addEventListener("input", renderVisits);
 
+      // Auth
       document.getElementById("btn-signin").addEventListener("click", async function(){ const email=document.getElementById("auth-email").value.trim(); const pass=document.getElementById("auth-pass").value; try { await signInWithEmailAndPassword(auth, email, pass); } catch (e) { alert("Sign in failed. If you don't have an account, tap Create."); } });
       document.getElementById("btn-signup").addEventListener("click", async function(){ const email=document.getElementById("auth-email").value.trim(); const pass=document.getElementById("auth-pass").value; try { await createUserWithEmailAndPassword(auth, email, pass); } catch (e) { alert("Create failed: "+e.message); } });
       document.getElementById("btn-signout").addEventListener("click", async function(){ await signOut(auth); });
