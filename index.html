@@ -241,4 +241,284 @@
     function defaultDays(freq, fallback=30){ switch(freq){case "Weekly":return 7;case "Biweekly":return 14;case "Monthly":return 30;case "Quarterly":return 90;default:return fallback;} }
     function computeStatus(contact){
       const last = contact.lastVisit ? new Date(contact.lastVisit) : null;
-      const days = contact.freqDays || defaultDays(con
+      const days = contact.freqDays || defaultDays(contact.frequency, 30);
+      const nextDue = last ? dateAddDays(last, days) : new Date();
+      const today = new Date(); today.setHours(0,0,0,0);
+      const diff = Math.floor((nextDue - today)/(1000*60*60*24));
+      let status = "red"; if(last){ status = diff<=0 ? "red" : diff<=7 ? "yellow" : "green"; }
+      return { nextDue, diffDays: diff, status };
+    }
+
+    async function renderToday(){
+      const q = $("#search").value.toLowerCase().trim();
+      const statusFilter = $("#filter-status").value;
+      const contacts = (await getAll("contacts")).filter(c => c.active !== false);
+      const enriched = contacts.map(c => ({...c, ...computeStatus(c)})).filter(c => {
+        const hay = (c.name+" "+(c.org||"")+" "+(c.location||"")).toLowerCase();
+        const matchQ = !q || hay.includes(q);
+        const matchS = statusFilter === "all" || c.status === statusFilter;
+        return matchQ && matchS;
+      }).sort((a,b)=>{
+        const score = s => s==="red"?3:s==="yellow"?2:1;
+        const s = score(b.status)-score(a.status);
+        if(s!==0) return s;
+        const d = a.diffDays - b.diffDays; if(d!==0) return d;
+        return (a.name||"").localeCompare(b.name||"");
+      });
+      const host = $("#today-list"); host.innerHTML="";
+      enriched.forEach(c=>{
+        const wrap=document.createElement("div"); wrap.className="col-4";
+        wrap.innerHTML=`
+          <div class="card">
+            <div class="row" style="justify-content:space-between">
+              <h3>${c.name||""}</h3>
+              <span class="status-dot ${c.status}"></span>
+            </div>
+            <div class="muted">${c.org||""}${c.org&&c.location?" • ":""}${c.location||""}</div>
+            <div class="row" style="margin:6px 0">
+              <span class="pill ${c.status}">${c.status==="red"?"Past due":c.status==="yellow"?"Due this week":"Not due"}</span>
+              <span class="pill">Next due: ${fmtDateOnly(c.nextDue)}</span>
+              <span class="pill">Freq: ${c.frequency}${c.frequency==="Custom"?` (${c.freqDays}d)`:""}</span>
+            </div>
+            <div class="row">
+              <button data-id="${c.id}" class="btn-log-now">Log visit</button>
+              <button data-id="${c.id}" class="btn-edit">Edit</button>
+              <button data-id="${c.id}" class="btn-mark-inactive">Archive</button>
+            </div>
+          </div>`;
+        host.appendChild(wrap);
+      });
+      host.querySelectorAll(".btn-edit").forEach(btn=>btn.addEventListener("click", async e => {
+        const id = e.currentTarget.getAttribute("data-id");
+        const c = await getByKey("contacts", id);
+        showSection("view-contacts");
+        populateContactForm(c);
+      }));
+      host.querySelectorAll(".btn-log-now").forEach(btn=>btn.addEventListener("click", async e => {
+        const id = e.currentTarget.getAttribute("data-id");
+        const c = await getByKey("contacts", id);
+        await logVisitNow(c);
+      }));
+      host.querySelectorAll(".btn-mark-inactive").forEach(btn=>btn.addEventListener("click", async e => {
+        const id = e.currentTarget.getAttribute("data-id");
+        const c = await getByKey("contacts", id);
+        c.active = false; await put("contacts", c); renderToday();
+      }));
+    }
+    function populateContactForm(c){
+      $("#form-title").textContent = c?.id ? "Edit Contact" : "Add Contact";
+      $("#contact-id").value = c?.id || "";
+      $("#name").value = c?.name || "";
+      $("#org").value = c?.org || "";
+      $("#location").value = c?.location || "";
+      $("#email").value = c?.email || "";
+      $("#phone").value = c?.phone || "";
+      $("#frequency").value = c?.frequency || "Monthly";
+      $("#freqDays").value = c?.freqDays || ({"Weekly":7,"Biweekly":14,"Monthly":30,"Quarterly":90}[$("#frequency").value]||30);
+      $("#lastVisit").value = c?.lastVisit ? fmtDateOnly(c.lastVisit) : "";
+      $("#active").value = (c?.active ?? true) ? "true" : "false";
+      $("#notes").value = c?.notes || "";
+    }
+    async function renderContactsList(){
+      const q = $("#contact-search").value.toLowerCase().trim();
+      const contacts = (await getAll("contacts")).filter(c=>c.active!==false).sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+      const host = $("#contact-list"); host.innerHTML="";
+      contacts.filter(c=>{
+        const hay=(c.name+" "+(c.org||"")+" "+(c.location||"")).toLowerCase();
+        return !q || hay.includes(q);
+      }).forEach(c=>{
+        const cmp = computeStatus(c);
+        const div=document.createElement("div"); div.className="col-12";
+        div.innerHTML=`
+          <div class="card">
+            <div class="row" style="justify-content:space-between">
+              <div>
+                <h3>${c.name||""}</h3>
+                <div class="muted">${c.org||""}${c.org&&c.location?" • ":""}${c.location||""}</div>
+              </div>
+              <div class="row">
+                <span class="pill ${cmp.status}">${cmp.status==="red"?"Past due":cmp.status==="yellow"?"Due this week":"Not due"}</span>
+                <span class="pill">Next due: ${fmtDateOnly(cmp.nextDue)}</span>
+              </div>
+            </div>
+            <div class="row" style="margin-top:8px">
+              <button data-id="${c.id}" class="btn-edit">Edit</button>
+              <button data-id="${c.id}" class="btn-log-now">Log visit</button>
+              <button data-id="${c.id}" class="btn-archive danger">Archive</button>
+            </div>
+          </div>`;
+        host.appendChild(div);
+      });
+      host.querySelectorAll(".btn-edit").forEach(btn=>btn.addEventListener("click", async e=>{
+        const id=e.currentTarget.getAttribute("data-id");
+        const c=await getByKey("contacts", id);
+        populateContactForm(c);
+      }));
+      host.querySelectorAll(".btn-log-now").forEach(btn=>btn.addEventListener("click", async e=>{
+        const id=e.currentTarget.getAttribute("data-id");
+        const c=await getByKey("contacts", id); await logVisitNow(c);
+      }));
+      host.querySelectorAll(".btn-archive").forEach(btn=>btn.addEventListener("click", async e=>{
+        const id=e.currentTarget.getAttribute("data-id");
+        const c=await getByKey("contacts", id); c.active=false; await put("contacts", c); renderContactsList();
+      }));
+    }
+    async function renderVisits(){
+      const q=$("#visit-search").value.toLowerCase().trim();
+      const [contacts, visits] = await Promise.all([getAll("contacts"), getAll("visits")]);
+      const nameById = Object.fromEntries(contacts.map(c=>[c.id, c.name]));
+      const filtered = visits.filter(v=>{
+        const hay=(nameById[v.contactId]+" "+(v.notes||"")+" "+(v.nextSteps||"")+" "+(v.outcome||"")).toLowerCase();
+        return !q || hay.includes(q);
+      }).sort((a,b)=> new Date(b.visitDate) - new Date(a.visitDate));
+      const host=$("#visit-list"); host.innerHTML="";
+      filtered.forEach(v=>{
+        const div=document.createElement("div"); div.className="col-12";
+        div.innerHTML=`
+          <div class="card">
+            <div class="row" style="justify-content:space-between">
+              <h3>${nameById[v.contactId]||"Unknown contact"}</h3>
+              <span class="muted">${fmtDate(v.visitDate)}</span>
+            </div>
+            <div class="row" style="gap:12px">
+              <span class="pill nowrap">${v.outcome||""}</span>
+              ${v.nextSteps?`<span class="pill">Next: ${v.nextSteps}</span>`:""}
+              ${v.createdBy?`<span class="pill">By: ${v.createdBy}</span>`:""}
+            </div>
+            ${v.notes?`<div style="margin-top:6px">${v.notes}</div>`:""}
+          </div>`;
+        host.appendChild(div);
+      });
+    }
+
+    // FIXED: do NOT send id: undefined to Firestore on new contacts
+    async function saveContactFromForm(e){
+      e?.preventDefault();
+      const existingId = $("#contact-id").value.trim();
+      const freq = $("#frequency").value;
+      const record = {
+        name: $("#name").value.trim(),
+        org: $("#org").value.trim(),
+        location: $("#location").value.trim(),
+        email: $("#email").value.trim(),
+        phone: $("#phone").value.trim(),
+        frequency: freq,
+        freqDays: Number($("#freqDays").value || ({"Weekly":7,"Biweekly":14,"Monthly":30,"Quarterly":90}[freq]||30)),
+        lastVisit: $("#lastVisit").value ? new Date($("#lastVisit").value).toISOString() : null,
+        notes: $("#notes").value.trim(),
+        active: $("#active").value === "true"
+      };
+      if (!record.name){ alert("Name is required."); return; }
+      if (existingId) {
+        record.id = existingId;               // update existing
+        await put("contacts", record);
+        $("#contact-id").value = existingId;
+      } else {
+        const newId = await add("contacts", record); // create new
+        $("#contact-id").value = newId;
+      }
+      await Promise.all([renderToday(), renderContactsList(), refreshVisitContactDropdown()]);
+      showSection("view-today");
+    }
+
+    async function logVisitNow(contact){
+      const notes = prompt(`Notes for ${contact.name}?`, "");
+      const visit={ contactId: contact.id, visitDate: new Date().toISOString(), notes: notes||"", outcome:"Follow-up", nextSteps:"", createdBy:"" };
+      await add("visits", visit);
+      contact.lastVisit = visit.visitDate; await put("contacts", contact);
+      await Promise.all([renderToday(), renderVisits()]);
+    }
+    async function saveVisitFromForm(e){
+      e?.preventDefault();
+      const contactId = $("#visit-contact").value;
+      if (!contactId){ alert("Pick a contact."); return; }
+      const dt = $("#visit-date").value ? new Date($("#visit-date").value).toISOString() : new Date().toISOString();
+      const visit={ contactId, visitDate: dt, notes: $("#visit-notes").value.trim(), outcome: $("#visit-outcome").value, nextSteps: $("#visit-next").value.trim(), createdBy: $("#visit-createdBy").value.trim() };
+      await add("visits", visit);
+      const c = await getByKey("contacts", contactId); c.lastVisit = dt; await put("contacts", c);
+      $("#visit-form").reset(); await Promise.all([renderToday(), renderVisits()]);
+    }
+    async function refreshVisitContactDropdown(){
+      const sel=$("#visit-contact");
+      const contacts=(await getAll("contacts")).filter(c=>c.active!==false).sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+      sel.innerHTML=`<option value="">— Select —</option>` + contacts.map(c=>`<option value="${c.id}">${c.name}</option>`).join("");
+    }
+    function showSection(id){ ["view-today","view-contacts","view-log"].forEach(v=>document.getElementById(v).classList.add("hidden")); document.getElementById(id).classList.remove("hidden"); }
+    function wireEvents(){
+      $("#btn-show-today").addEventListener("click", ()=>{ showSection("view-today"); renderToday(); });
+      $("#btn-show-contacts").addEventListener("click", ()=>{ showSection("view-contacts"); renderContactsList(); });
+      $("#btn-show-log").addEventListener("click", ()=>{ showSection("view-log"); renderVisits(); });
+      $("#btn-add-quick").addEventListener("click", ()=>{ showSection("view-contacts"); $("#name").focus(); });
+
+      $("#btn-export").addEventListener("click", exportJSON);
+      $("#import-file").addEventListener("change", e => e.target.files[0] && importJSON(e.target.files[0]));
+
+      $("#contact-form").addEventListener("submit", saveContactFromForm);
+      $("#btn-reset").addEventListener("click", ()=>{ $("#contact-form").reset(); $("#form-title").textContent="Add Contact"; });
+      $("#frequency").addEventListener("change", ()=>{ const f=$("#frequency").value; $("#freqDays").value = ({"Weekly":7,"Biweekly":14,"Monthly":30,"Quarterly":90}[f]||Number($("#freqDays").value||30)); });
+      $("#visit-form").addEventListener("submit", saveVisitFromForm);
+      $("#btn-quick-today").addEventListener("click", async ()=>{ const id=$("#visit-contact").value; if(!id){ alert("Pick a contact."); return; } const c=await getByKey("contacts", id); await logVisitNow(c); $("#visit-form").reset(); });
+
+      $("#search").addEventListener("input", renderToday);
+      $("#filter-status").addEventListener("change", renderToday);
+      $("#contact-search").addEventListener("input", renderContactsList);
+      $("#visit-search").addEventListener("input", renderVisits);
+
+      // Auth buttons
+      $("#btn-signin").addEventListener("click", async ()=>{
+        const email = $("#auth-email").value.trim();
+        const pass = $("#auth-pass").value;
+        try { await signInWithEmailAndPassword(auth, email, pass); }
+        catch (e) { alert("Sign in failed. If you don't have an account, tap Create."); }
+      });
+      $("#btn-signup").addEventListener("click", async ()=>{
+        const email = $("#auth-email").value.trim();
+        const pass = $("#auth-pass").value;
+        try { await createUserWithEmailAndPassword(auth, email, pass); }
+        catch (e) { alert("Create failed: "+e.message); }
+      });
+      $("#btn-signout").addEventListener("click", async ()=>{ await signOut(auth); });
+    }
+
+    function updateAuthUI(){
+      const una = document.getElementById("authbar-unauthed");
+      const aut = document.getElementById("authbar-authed");
+      if (user) { una.classList.add("hidden"); aut.classList.remove("hidden"); document.getElementById("whoami").textContent = user.email; }
+      else { una.classList.remove("hidden"); aut.classList.add("hidden"); }
+    }
+
+    function clearUI(){ document.getElementById("today-list").innerHTML=""; document.getElementById("contact-list").innerHTML=""; document.getElementById("visit-list").innerHTML=""; }
+
+    function subscribeRealtime(){
+      onSnapshot(collection(db, colPath("contacts")), ()=>{ renderToday(); renderContactsList(); refreshVisitContactDropdown(); });
+      onSnapshot(collection(db, colPath("visits")), ()=>{ renderVisits(); });
+    }
+
+    async function loadAllAndRender(){ await Promise.all([renderToday(), renderContactsList(), renderVisits(), refreshVisitContactDropdown()]); showSection("view-today"); }
+
+    async function exportJSON(){
+      const [contacts, visits] = await Promise.all([getAll("contacts"), getAll("visits")]);
+      const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), contacts, visits }, null, 2)], {type:"application/json"});
+      const a = document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="visit-tracker-backup.json"; a.click(); URL.revokeObjectURL(a.href);
+    }
+    async function importJSON(file){
+      const text=await file.text(); const data=JSON.parse(text); if(!data.contacts||!data.visits){ alert("Invalid file."); return; }
+      if(!confirm("Importing will MERGE with existing records. Continue?")) return;
+      for(const c of data.contacts){ const copy={...c}; delete copy.id; await add("contacts", copy); }
+      const all=await getAll("contacts"); const byName={}; all.forEach(c=>{ byName[c.name]=c.id; });
+      for(const v of data.visits){ const name=(data.contacts.find(c=>c.id===v.contactId)||{}).name; const newId=name?byName[name]:null; if(newId){ const copy={...v}; delete copy.id; copy.contactId=newId; await add("visits", copy); } }
+      await Promise.all([renderToday(), renderContactsList(), renderVisits(), refreshVisitContactDropdown()]); alert("Import complete.");
+    }
+
+    wireEvents();
+    const cloudOK = await initCloud();
+    if (!cloudOK) { alert("Cloud sync is not configured. (If you see this, refresh once.)"); }
+  </script>
+
+  <!-- DEBUG: show any hidden errors so we can fix fast -->
+  <script>
+    window.addEventListener('unhandledrejection', e => { alert('Error: ' + (e.reason && (e.reason.message || e.reason))); });
+    window.addEventListener('error', e => { alert('Error: ' + e.message); });
+  </script>
+</body>
+</html>
