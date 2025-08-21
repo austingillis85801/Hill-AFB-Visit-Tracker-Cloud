@@ -200,7 +200,7 @@
     import { getFirestore, enableIndexedDbPersistence, collection, addDoc, setDoc, doc, getDocs, getDoc, query, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-    // Your Firebase config (looks perfect)
+    // Your Firebase config
     const firebaseConfig = {
       apiKey: "AIzaSyAoVOV9GPu6n4M2BVFlOSnXwEUcASjL9Dk",
       authDomain: "hill-afb-tracker-cloud.firebaseapp.com",
@@ -224,7 +224,7 @@
       app = initializeApp(firebaseConfig);
       auth = getAuth(app);
       db = getFirestore(app);
-      try { await enableIndexedDbPersistence(db); } catch (e) { /* already enabled or private mode */ }
+      try { await enableIndexedDbPersistence(db); } catch (e) { /* ok in private mode */ }
       onAuthStateChanged(auth, (u) => {
         user = u || null;
         updateAuthUI();
@@ -262,7 +262,7 @@
       return snap.exists() ? ({ id: snap.id, ...snap.data() }) : null;
     }
 
-    // Helpers & logic
+    // Helpers & UI logic
     function fmtDate(date){ if(!date) return ""; const d=new Date(date); return d.toLocaleDateString()+" "+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); }
     function fmtDateOnly(date){ if(!date) return ""; const d=new Date(date); return d.toISOString().slice(0,10); }
     function dateAddDays(date, days){ const d=new Date(date||new Date()); d.setHours(0,0,0,0); d.setDate(d.getDate()+Number(days||0)); return d; }
@@ -546,6 +546,16 @@
     if (!cloudOK) {
       alert("Cloud sync is not configured. (But your config looks set—if you see this, refresh once.)");
     }
+  </script>
+
+  <!-- DEBUG: show any hidden errors so we can fix fast -->
+  <script>
+    window.addEventListener('unhandledrejection', e => {
+      alert('Error: ' + (e.reason && (e.reason.message || e.reason)));
+    });
+    window.addEventListener('error', e => {
+      alert('Error: ' + e.message);
+    });
   </script>
 </body>
 </html>
