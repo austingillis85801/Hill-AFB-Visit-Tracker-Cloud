@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hill AFB Visit Tracker (Cloud Sync) — v4</title>
+  <title>Hill AFB Visit Tracker (Cloud Sync) — v5</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="VisitTracker">
@@ -21,29 +21,56 @@
     .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
     .ghost{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.4);border-radius:8px;padding:8px 10px}
     .hidden{display:none!important}
+
     main{padding:16px;max-width:1100px;margin:0 auto}
     .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
-    button,select,input,textarea{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:#fff;color:var(--text)}
+    button,select,input,textarea{font:inherit;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:#fff;color:var(--text);width:100%}
+    .toolbar button{width:auto}
     button.primary{background:var(--blue);color:#fff;border-color:var(--blue)}
     button.danger{background:var(--red);color:#fff;border-color:var(--red)}
-    .grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:12px}
-    .col-4{grid-column:span 4}.col-6{grid-column:span 6}.col-8{grid-column:span 8}.col-12{grid-column:span 12}
-    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
-    .card h3{margin:0 0 4px 0;font-size:16px}
+    label{display:block;margin:2px 0 6px 2px;font-weight:600}
+
+    /* Mobile-first grids: stack by default */
+    .grid{display:grid;grid-template-columns:1fr;gap:12px}
+    .col-4,.col-6,.col-8,.col-12{grid-column:span 1}
+
+    /* Larger screens: 12-column layout */
+    @media (min-width: 900px){
+      .grid{grid-template-columns:repeat(12,minmax(0,1fr))}
+      .col-4{grid-column:span 4}.col-6{grid-column:span 6}.col-8{grid-column:span 8}.col-12{grid-column:span 12}
+      button,select,input,textarea{width:auto}
+      .field input,.field select,.field textarea{width:100%}
+    }
+
+    .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+    .card h3{margin:0 0 6px 0;font-size:18px}
     .muted{color:var(--muted);font-size:12px}
+
+    /* Today/Contacts cards: clearer visual priority */
+    .card.red{border-left:6px solid var(--red)}
+    .card.yellow{border-left:6px solid var(--yellow)}
+    .card.green{border-left:6px solid var(--green)}
+    .contact-row{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
+    .contact-actions{display:flex;gap:8px;flex-wrap:wrap}
     .status-dot{width:10px;height:10px;border-radius:10px;display:inline-block}
     .green{background:var(--green)}.yellow{background:var(--yellow)}.red{background:var(--red)}
-    .pill{font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--border);background:#fff}
+    .pill{font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid var(--border);background:#fff;display:inline-block}
     .pill.red{border-color:var(--red);color:var(--red)}.pill.yellow{border-color:var(--yellow);color:var(--yellow)}.pill.green{border-color:var(--green);color:var(--green)}
     .nowrap{white-space:nowrap}
     .footer{margin-top:24px;color:var(--muted);font-size:12px}
-    .authbar input{border-color:rgba(255,255,255,.5);background:rgba(255,255,255,.1);color:#fff}
+
+    /* Lists: responsive columns that never squish */
+    #today-list,#visit-list,#contact-list{display:grid;grid-template-columns:1fr;gap:12px}
+    @media (min-width:600px){ #today-list,#contact-list{grid-template-columns:1fr 1fr} }
+    @media (min-width:1000px){ #today-list,#contact-list{grid-template-columns:1fr 1fr 1fr} }
+
+    .authbar input{border-color:rgba(255,255,255,.5);background:rgba(255,255,255,.1);color:#fff;width:180px}
     .authbar input::placeholder{color:#eef}
   </style>
 </head>
 <body>
   <header>
-    <h1>Hill AFB Visit Tracker (Cloud Sync) — v4</h1>
+    <h1>Hill AFB Visit Tracker (Cloud Sync) — v5</h1>
     <span class="muted">Cloud sync • Offline • Local cache</span>
 
     <!-- Signed OUT -->
@@ -75,7 +102,7 @@
     <section id="view-today">
       <div class="toolbar">
         <input id="search" placeholder="Search name/org/location…" style="flex:1">
-        <select id="filter-status">
+        <select id="filter-status" style="width:auto">
           <option value="all">All statuses</option>
           <option value="red">Past due</option>
           <option value="yellow">Due this week</option>
@@ -83,7 +110,7 @@
         </select>
         <button id="btn-add-quick" class="primary">+ Quick add</button>
       </div>
-      <div id="today-list" class="grid"></div>
+      <div id="today-list"></div>
       <div class="footer">Status rules: <span class="pill red">Past due</span> ≤ today • <span class="pill yellow">Due this week</span> within 7 days • <span class="pill green">Not due</span> &gt; 7 days.</div>
     </section>
 
@@ -94,33 +121,33 @@
           <form id="contact-form">
             <input type="hidden" id="contact-id">
             <div class="grid">
-              <div class="col-6"><label>Name</label><input id="name" required></div>
-              <div class="col-6"><label>Org</label><input id="org"></div>
-              <div class="col-12"><label>Location</label><input id="location"></div>
-              <div class="col-6"><label>Email</label><input id="email" type="email"></div>
-              <div class="col-6"><label>Phone</label><input id="phone"></div>
-              <div class="col-6"><label>Frequency</label>
+              <div class="col-6 field"><label>Name</label><input id="name" required></div>
+              <div class="col-6 field"><label>Org</label><input id="org"></div>
+              <div class="col-12 field"><label>Location</label><input id="location"></div>
+              <div class="col-6 field"><label>Email</label><input id="email" type="email"></div>
+              <div class="col-6 field"><label>Phone</label><input id="phone"></div>
+              <div class="col-6 field"><label>Frequency</label>
                 <select id="frequency">
                   <option>Weekly</option><option>Biweekly</option><option selected>Monthly</option><option>Quarterly</option><option>Custom</option>
                 </select>
               </div>
-              <div class="col-6"><label>Frequency (days)</label><input id="freqDays" type="number" min="1" value="30"></div>
-              <div class="col-6"><label>Last Visit</label><input id="lastVisit" type="date"></div>
-              <div class="col-6"><label>Active</label>
+              <div class="col-6 field"><label>Frequency (days)</label><input id="freqDays" type="number" min="1" value="30"></div>
+              <div class="col-6 field"><label>Last Visit</label><input id="lastVisit" type="date"></div>
+              <div class="col-6 field"><label>Active</label>
                 <select id="active"><option value="true" selected>Yes</option><option value="false">No</option></select>
               </div>
-              <div class="col-12"><label>Notes</label><textarea id="notes" rows="3"></textarea></div>
-              <div class="col-12 row">
+              <div class="col-12 field"><label>Notes</label><textarea id="notes" rows="3" style="width:100%"></textarea></div>
+              <div class="col-12 row" style="justify-content:flex-start">
                 <button class="primary" type="submit" id="btn-save-contact">Save</button>
                 <button type="button" id="btn-reset">Reset</button>
-                <span class="right muted">Tip: set Frequency to Custom for exact days.</span>
+                <span class="muted" style="margin-left:auto">Tip: set Frequency to Custom for exact days.</span>
               </div>
             </div>
           </form>
         </div>
         <div class="col-6">
           <div class="toolbar"><input id="contact-search" placeholder="Search contacts…" style="flex:1"></div>
-          <div id="contact-list" class="grid"></div>
+          <div id="contact-list"></div>
         </div>
       </div>
     </section>
@@ -130,18 +157,18 @@
         <div class="col-4 card">
           <h3>Log Visit</h3>
           <form id="visit-form">
-            <div><label>Contact</label><select id="visit-contact" required></select></div>
+            <div class="field"><label>Contact</label><select id="visit-contact" required></select></div>
             <div class="grid">
-              <div class="col-6"><label>Visit Date</label><input id="visit-date" type="datetime-local"></div>
-              <div class="col-6"><label>Outcome</label>
+              <div class="col-6 field"><label>Visit Date</label><input id="visit-date" type="datetime-local"></div>
+              <div class="col-6 field"><label>Outcome</label>
                 <select id="visit-outcome">
                   <option>Discovery</option><option>Follow-up</option><option>Quote Sent</option>
                   <option>Closed Won</option><option>Closed Lost</option><option>Other</option>
                 </select>
               </div>
-              <div class="col-12"><label>Notes</label><textarea id="visit-notes" rows="4"></textarea></div>
-              <div class="col-12"><label>Next Steps</label><input id="visit-next"></div>
-              <div class="col-12"><label>Created By</label><input id="visit-createdBy" placeholder="GAR name or email"></div>
+              <div class="col-12 field"><label>Notes</label><textarea id="visit-notes" rows="4" style="width:100%"></textarea></div>
+              <div class="col-12 field"><label>Next Steps</label><input id="visit-next"></div>
+              <div class="col-12 field"><label>Created By</label><input id="visit-createdBy" placeholder="GAR name or email"></div>
             </div>
             <div class="row" style="margin-top:8px">
               <button class="primary" type="submit">Save Visit</button>
@@ -151,7 +178,7 @@
         </div>
         <div class="col-8">
           <div class="toolbar"><input id="visit-search" placeholder="Search visits…" style="flex:1"></div>
-          <div id="visit-list" class="grid"></div>
+          <div id="visit-list"></div>
         </div>
       </div>
     </section>
@@ -164,13 +191,12 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function() {
-        // versioned SW url ensures updates: bump v=4 when you change sw.js
-        navigator.serviceWorker.register('sw.js?v=4');
+        navigator.serviceWorker.register('sw.js?v=5'); // versioned so updates stick
       });
     }
   </script>
 
-  <!-- Main app (no top-level await; no optional-chaining) -->
+  <!-- Main app (iPhone-safe JS) -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import { getFirestore, enableIndexedDbPersistence, collection, addDoc, setDoc, doc, getDocs, getDoc, query, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -186,12 +212,9 @@
     };
 
     const $ = (sel) => document.querySelector(sel);
-
-    // Cloud state
     var app, auth, db, user = null;
 
     function validConfig(cfg) { return !!(cfg && cfg.apiKey); }
-
     function colPath(store) { return "users/" + (user ? user.uid : "NOUSER") + "/" + store; }
 
     async function addItem(store, value) {
@@ -233,61 +256,49 @@
       return { nextDue: nextDue, diffDays: diff, status: status };
     }
 
+    function contactCardHTML(c){
+      return '<div class="card '+c.status+'">\
+        <div class="contact-row">\
+          <div style="flex:1 1 auto;min-width:220px">\
+            <h3>'+ (c.name||"") +'</h3>\
+            <div class="muted">'+ ((c.org||"") + (c.org&&c.location?" • ":"") + (c.location||"")) +'</div>\
+            <div class="row" style="margin-top:6px">\
+              <span class="pill '+c.status+'">'+(c.status==="red"?"Past due":(c.status==="yellow"?"Due this week":"Not due"))+'</span>\
+              <span class="pill">Next due: '+ fmtDateOnly(c.nextDue) +'</span>\
+              <span class="pill">Freq: '+ (c.frequency||"") + (c.frequency==="Custom"?" ("+c.freqDays+"d)":"") +'</span>\
+            </div>\
+          </div>\
+          <div class="contact-actions">\
+            <button data-id="'+c.id+'" class="btn-log-now">Log</button>\
+            <button data-id="'+c.id+'" class="btn-edit">Edit</button>\
+            <button data-id="'+c.id+'" class="btn-mark-inactive">Archive</button>\
+          </div>\
+        </div>\
+      </div>';
+    }
+
     async function renderToday(){
       const q = ($("#search").value||"").toLowerCase().trim();
       const statusFilter = $("#filter-status").value;
       const contacts = (await getAll("contacts")).filter(function(c){ return c.active !== false; });
-      const enriched = contacts.map(function(c){ const extra=computeStatus(c); var out={}; for (var k in c) out[k]=c[k]; for (var k2 in extra) out[k2]=extra[k2]; return out; })
+      const enriched = contacts.map(function(c){ const e=computeStatus(c); const o={}; for (var k in c) o[k]=c[k]; for (var k2 in e) o[k2]=e[k2]; return o; })
         .filter(function(c){
-          const hay = (c.name+" "+(c.org||"")+" "+(c.location||"")).toLowerCase();
-          const matchQ = !q || hay.includes(q);
-          const matchS = statusFilter === "all" || c.status === statusFilter;
-          return matchQ && matchS;
+          const hay=(c.name+" "+(c.org||"")+" "+(c.location||"")).toLowerCase();
+          return (!q || hay.includes(q)) && (statusFilter==="all" || c.status===statusFilter);
         })
         .sort(function(a,b){
-          function score(s){ return s==="red"?3: s==="yellow"?2: 1; }
+          function score(s){ return s==="red"?3:s==="yellow"?2:1; }
           const s = score(b.status)-score(a.status); if(s!==0) return s;
           const d = a.diffDays - b.diffDays; if(d!==0) return d;
           return (a.name||"").localeCompare(b.name||"");
         });
-      const host = $("#today-list"); host.innerHTML="";
-      enriched.forEach(function(c){
-        const wrap=document.createElement("div"); wrap.className="col-4";
-        wrap.innerHTML = '<div class="card">\
-            <div class="row" style="justify-content:space-between">\
-              <h3>'+(c.name||"")+'</h3>\
-              <span class="status-dot '+c.status+'"></span>\
-            </div>\
-            <div class="muted">'+(c.org||"")+(c.org&&c.location?" • ":"")+(c.location||"")+'</div>\
-            <div class="row" style="margin:6px 0">\
-              <span class="pill '+c.status+'">'+(c.status==="red"?"Past due":(c.status==="yellow"?"Due this week":"Not due"))+'</span>\
-              <span class="pill">Next due: '+fmtDateOnly(c.nextDue)+'</span>\
-              <span class="pill">Freq: '+(c.frequency||"")+(c.frequency==="Custom"?" ("+c.freqDays+"d)":"")+'</span>\
-            </div>\
-            <div class="row">\
-              <button data-id="'+c.id+'" class="btn-log-now">Log visit</button>\
-              <button data-id="'+c.id+'" class="btn-edit">Edit</button>\
-              <button data-id="'+c.id+'" class="btn-mark-inactive">Archive</button>\
-            </div>\
-          </div>';
-        host.appendChild(wrap);
-      });
-      host.querySelectorAll(".btn-edit").forEach(function(btn){ btn.addEventListener("click", async function(e){
-        const id = e.currentTarget.getAttribute("data-id");
-        const c = await getByKey("contacts", id);
-        showSection("view-contacts");
-        populateContactForm(c);
-      });});
-      host.querySelectorAll(".btn-log-now").forEach(function(btn){ btn.addEventListener("click", async function(e){
-        const id = e.currentTarget.getAttribute("data-id");
-        const c = await getByKey("contacts", id);
-        await logVisitNow(c);
-      });});
-      host.querySelectorAll(".btn-mark-inactive").forEach(function(btn){ btn.addEventListener("click", async function(e){
-        const id = e.currentTarget.getAttribute("data-id");
-        const c = await getByKey("contacts", id);
-        c.active = false; await putItem("contacts", c); renderToday();
-      });});
+
+      const host=$("#today-list"); host.innerHTML="";
+      enriched.forEach(function(c){ const wrap=document.createElement("div"); wrap.innerHTML=contactCardHTML(c); host.appendChild(wrap.firstChild); });
+
+      host.querySelectorAll(".btn-edit").forEach(function(btn){ btn.addEventListener("click", async function(e){ const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id); showSection("view-contacts"); populateContactForm(c); });});
+      host.querySelectorAll(".btn-log-now").forEach(function(btn){ btn.addEventListener("click", async function(e){ const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id); await logVisitNow(c); });});
+      host.querySelectorAll(".btn-mark-inactive").forEach(function(btn){ btn.addEventListener("click", async function(e){ const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id); c.active=false; await putItem("contacts", c); renderToday(); });});
     }
 
     function populateContactForm(c){
@@ -314,36 +325,12 @@
         const hay=(c.name+" "+(c.org||"")+" "+(c.location||"")).toLowerCase();
         return !q || hay.includes(q);
       }).forEach(function(c){
-        const cmp = computeStatus(c);
-        const div=document.createElement("div"); div.className="col-12";
-        div.innerHTML = '<div class="card">\
-            <div class="row" style="justify-content:space-between">\
-              <div><h3>'+ (c.name||"") +'</h3>\
-                <div class="muted">'+(c.org||"")+(c.org&&c.location?" • ":"")+(c.location||"")+'</div></div>\
-              <div class="row">\
-                <span class="pill '+cmp.status+'">'+(cmp.status==="red"?"Past due":(cmp.status==="yellow"?"Due this week":"Not due"))+'</span>\
-                <span class="pill">Next due: '+fmtDateOnly(cmp.nextDue)+'</span>\
-              </div></div>\
-            <div class="row" style="margin-top:8px">\
-              <button data-id="'+c.id+'" class="btn-edit">Edit</button>\
-              <button data-id="'+c.id+'" class="btn-log-now">Log visit</button>\
-              <button data-id="'+c.id+'" class="btn-archive danger">Archive</button>\
-            </div></div>';
-        host.appendChild(div);
+        const cmp=computeStatus(c); const node=document.createElement("div"); node.innerHTML=contactCardHTML(Object.assign({}, c, cmp)); host.appendChild(node.firstChild);
       });
-      host.querySelectorAll(".btn-edit").forEach(function(btn){ btn.addEventListener("click", async function(e){
-        const id=e.currentTarget.getAttribute("data-id");
-        const c=await getByKey("contacts", id);
-        populateContactForm(c);
-      });});
-      host.querySelectorAll(".btn-log-now").forEach(function(btn){ btn.addEventListener("click", async function(e){
-        const id=e.currentTarget.getAttribute("data-id");
-        const c=await getByKey("contacts", id); await logVisitNow(c);
-      });});
-      host.querySelectorAll(".btn-archive").forEach(function(btn){ btn.addEventListener("click", async function(e){
-        const id=e.currentTarget.getAttribute("data-id");
-        const c=await getByKey("contacts", id); c.active=false; await putItem("contacts", c); renderContactsList();
-      });});
+
+      host.querySelectorAll(".btn-edit").forEach(function(btn){ btn.addEventListener("click", async function(e){ const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id); populateContactForm(c); });});
+      host.querySelectorAll(".btn-log-now").forEach(function(btn){ btn.addEventListener("click", async function(e){ const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id); await logVisitNow(c); });});
+      host.querySelectorAll(".btn-mark-inactive,.btn-archive").forEach(function(btn){ btn.addEventListener("click", async function(e){ const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id); c.active=false; await putItem("contacts", c); renderContactsList(); });});
     }
 
     async function renderVisits(){
@@ -357,8 +344,8 @@
       }).sort(function(a,b){ return new Date(b.visitDate) - new Date(a.visitDate); });
       const host=document.getElementById("visit-list"); host.innerHTML="";
       filtered.forEach(function(v){
-        const div=document.createElement("div"); div.className="col-12";
-        div.innerHTML = '<div class="card">\
+        const div=document.createElement("div"); div.innerHTML =
+          '<div class="card">\
             <div class="row" style="justify-content:space-between">\
               <h3>'+ (nameById[v.contactId]||"Unknown contact") +'</h3>\
               <span class="muted">'+ fmtDate(v.visitDate) +'</span>\
@@ -369,7 +356,7 @@
               '+ (v.createdBy?('<span class="pill">By: '+v.createdBy+'</span>'):'') +'\
             </div>'+ (v.notes?('<div style="margin-top:6px">'+v.notes+'</div>'):'') +'\
           </div>';
-        host.appendChild(div);
+        host.appendChild(div.firstChild);
       });
     }
 
@@ -390,14 +377,8 @@
         active: document.getElementById("active").value === "true"
       };
       if (!record.name){ alert("Name is required."); return; }
-      if (existingId) {
-        record.id = existingId;
-        await putItem("contacts", record);
-        document.getElementById("contact-id").value = existingId;
-      } else {
-        const newId = await addItem("contacts", record);
-        document.getElementById("contact-id").value = newId;
-      }
+      if (existingId) { record.id = existingId; await putItem("contacts", record); document.getElementById("contact-id").value = existingId; }
+      else { const newId = await addItem("contacts", record); document.getElementById("contact-id").value = newId; }
       await Promise.all([renderToday(), renderContactsList(), refreshVisitContactDropdown()]);
       showSection("view-today");
     }
@@ -449,19 +430,8 @@
       document.getElementById("contact-search").addEventListener("input", renderContactsList);
       document.getElementById("visit-search").addEventListener("input", renderVisits);
 
-      // Auth buttons
-      document.getElementById("btn-signin").addEventListener("click", async function(){
-        const email = document.getElementById("auth-email").value.trim();
-        const pass = document.getElementById("auth-pass").value;
-        try { await signInWithEmailAndPassword(auth, email, pass); }
-        catch (e) { alert("Sign in failed. If you don't have an account, tap Create."); }
-      });
-      document.getElementById("btn-signup").addEventListener("click", async function(){
-        const email = document.getElementById("auth-email").value.trim();
-        const pass = document.getElementById("auth-pass").value;
-        try { await createUserWithEmailAndPassword(auth, email, pass); }
-        catch (e) { alert("Create failed: "+e.message); }
-      });
+      document.getElementById("btn-signin").addEventListener("click", async function(){ const email=document.getElementById("auth-email").value.trim(); const pass=document.getElementById("auth-pass").value; try { await signInWithEmailAndPassword(auth, email, pass); } catch (e) { alert("Sign in failed. If you don't have an account, tap Create."); } });
+      document.getElementById("btn-signup").addEventListener("click", async function(){ const email=document.getElementById("auth-email").value.trim(); const pass=document.getElementById("auth-pass").value; try { await createUserWithEmailAndPassword(auth, email, pass); } catch (e) { alert("Create failed: "+e.message); } });
       document.getElementById("btn-signout").addEventListener("click", async function(){ await signOut(auth); });
     }
 
@@ -492,33 +462,21 @@
       await Promise.all([renderToday(), renderContactsList(), renderVisits(), refreshVisitContactDropdown()]); alert("Import complete.");
     }
 
-    // Initialize (wrapped IIFE; no top-level await)
     (async function init(){
       if (!validConfig(firebaseConfig)) return;
-      app = initializeApp(firebaseConfig);
-      auth = getAuth(app);
-      db = getFirestore(app);
-      try { await enableIndexedDbPersistence(db); } catch (e) { /* ok if not available */ }
+      app = initializeApp(firebaseConfig); auth = getAuth(app); db = getFirestore(app);
+      try { await enableIndexedDbPersistence(db); } catch (e) {}
       wireEvents();
-      onAuthStateChanged(auth, function(u){
-        user = u || null;
-        updateAuthUI();
-        if (user) { subscribeRealtime(); loadAllAndRender(); }
-        else { clearUI(); }
-      });
+      onAuthStateChanged(auth, function(u){ user=u||null; updateAuthUI(); if(user){ subscribeRealtime(); loadAllAndRender(); } else { clearUI(); } });
     })();
 
     async function loadAllAndRender(){ await Promise.all([renderToday(), renderContactsList(), renderVisits(), refreshVisitContactDropdown()]); showSection("view-today"); }
   </script>
 
-  <!-- DEBUG: show more details if something fails -->
+  <!-- Show errors clearly if something goes wrong -->
   <script>
-    window.addEventListener('unhandledrejection', function(e){
-      alert('Error (promise): ' + (e.reason && (e.reason.stack || e.reason.message || e.reason)));
-    });
-    window.addEventListener('error', function(e){
-      alert('Error (script): ' + e.message + (e.filename?(' @ '+e.filename+':'+e.lineno+':'+e.colno):''));
-    });
+    window.addEventListener('unhandledrejection', function(e){ alert('Error (promise): ' + (e.reason && (e.reason.stack || e.reason.message || e.reason))); });
+    window.addEventListener('error', function(e){ alert('Error (script): ' + e.message + (e.filename?(' @ '+e.filename+':'+e.lineno+':'+e.colno):'')); });
   </script>
 </body>
 </html>
