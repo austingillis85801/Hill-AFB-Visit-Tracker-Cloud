@@ -164,7 +164,8 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function() {
-        navigator.serviceWorker.register('sw.js');
+        // NOTE: versioned URL so devices always fetch latest sw.js
+        navigator.serviceWorker.register('sw.js?v=3');
       });
     }
   </script>
@@ -455,70 +456,6 @@
 
       $("#contact-form").addEventListener("submit", saveContactFromForm);
       $("#btn-reset").addEventListener("click", ()=>{ $("#contact-form").reset(); $("#form-title").textContent="Add Contact"; });
-      $("#frequency").addEventListener("change", ()=>{ const f=$("#frequency").value; $("#freqDays").value = ({"Weekly":7,"Biweekly":14,"Monthly":30,"Quarterly":90}[f]||Number($("#freqDays").value||30)); });
-      $("#visit-form").addEventListener("submit", saveVisitFromForm);
-      $("#btn-quick-today").addEventListener("click", async ()=>{ const id=$("#visit-contact").value; if(!id){ alert("Pick a contact."); return; } const c=await getByKey("contacts", id); await logVisitNow(c); $("#visit-form").reset(); });
+      $("#frequency").addEventListener("change", ()=>{ const f=$("#frequency").value; $("#freqDays").value = ({"Weekly":7,"Biweekly":14,"Monthly":30,"Quarterly":90}[f]||Number($("#freqDays")
 
-      $("#search").addEventListener("input", renderToday);
-      $("#filter-status").addEventListener("change", renderToday);
-      $("#contact-search").addEventListener("input", renderContactsList);
-      $("#visit-search").addEventListener("input", renderVisits);
-
-      // Auth buttons
-      $("#btn-signin").addEventListener("click", async ()=>{
-        const email = $("#auth-email").value.trim();
-        const pass = $("#auth-pass").value;
-        try { await signInWithEmailAndPassword(auth, email, pass); }
-        catch (e) { alert("Sign in failed. If you don't have an account, tap Create."); }
-      });
-      $("#btn-signup").addEventListener("click", async ()=>{
-        const email = $("#auth-email").value.trim();
-        const pass = $("#auth-pass").value;
-        try { await createUserWithEmailAndPassword(auth, email, pass); }
-        catch (e) { alert("Create failed: "+e.message); }
-      });
-      $("#btn-signout").addEventListener("click", async ()=>{ await signOut(auth); });
-    }
-
-    function updateAuthUI(){
-      const una = document.getElementById("authbar-unauthed");
-      const aut = document.getElementById("authbar-authed");
-      if (user) { una.classList.add("hidden"); aut.classList.remove("hidden"); document.getElementById("whoami").textContent = user.email; }
-      else { una.classList.remove("hidden"); aut.classList.add("hidden"); }
-    }
-
-    function clearUI(){ document.getElementById("today-list").innerHTML=""; document.getElementById("contact-list").innerHTML=""; document.getElementById("visit-list").innerHTML=""; }
-
-    function subscribeRealtime(){
-      onSnapshot(collection(db, colPath("contacts")), ()=>{ renderToday(); renderContactsList(); refreshVisitContactDropdown(); });
-      onSnapshot(collection(db, colPath("visits")), ()=>{ renderVisits(); });
-    }
-
-    async function loadAllAndRender(){ await Promise.all([renderToday(), renderContactsList(), renderVisits(), refreshVisitContactDropdown()]); showSection("view-today"); }
-
-    async function exportJSON(){
-      const [contacts, visits] = await Promise.all([getAll("contacts"), getAll("visits")]);
-      const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), contacts, visits }, null, 2)], {type:"application/json"});
-      const a = document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="visit-tracker-backup.json"; a.click(); URL.revokeObjectURL(a.href);
-    }
-    async function importJSON(file){
-      const text=await file.text(); const data=JSON.parse(text); if(!data.contacts||!data.visits){ alert("Invalid file."); return; }
-      if(!confirm("Importing will MERGE with existing records. Continue?")) return;
-      for(const c of data.contacts){ const copy={...c}; delete copy.id; await add("contacts", copy); }
-      const all=await getAll("contacts"); const byName={}; all.forEach(c=>{ byName[c.name]=c.id; });
-      for(const v of data.visits){ const name=(data.contacts.find(c=>c.id===v.contactId)||{}).name; const newId=name?byName[name]:null; if(newId){ const copy={...v}; delete copy.id; copy.contactId=newId; await add("visits", copy); } }
-      await Promise.all([renderToday(), renderContactsList(), renderVisits(), refreshVisitContactDropdown()]); alert("Import complete.");
-    }
-
-    wireEvents();
-    const cloudOK = await initCloud();
-    if (!cloudOK) { alert("Cloud sync is not configured. (If you see this, refresh once.)"); }
-  </script>
-
-  <!-- DEBUG: show any hidden errors so we can fix fast -->
-  <script>
-    window.addEventListener('unhandledrejection', e => { alert('Error: ' + (e.reason && (e.reason.message || e.reason))); });
-    window.addEventListener('error', e => { alert('Error: ' + e.message); });
-  </script>
-</body>
-</html>
+The message got cut due to length? Wait ensure not to exceed token limit. Continue code.
