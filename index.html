@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hill AFB Visit Tracker (Cloud Sync) — v9</title>
+  <title>Hill AFB Visit Tracker (Cloud Sync) — v10</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="VisitTracker">
@@ -14,8 +14,6 @@
     :root { --bg:#f7f7fb; --card:#fff; --text:#222; --muted:#666; --border:#e5e5ef; --green:#26a269; --yellow:#e5a50a; --red:#c01c28; --blue:#1f6feb; }
     *{box-sizing:border-box}
     body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji";background:var(--bg);color:var(--text)}
-
-    /* Header — compact */
     header{position:sticky;top:0;z-index:5;background:linear-gradient(180deg,var(--blue),#3a7cf0);color:#fff;border-bottom:1px solid var(--border);padding:6px 10px;display:flex;flex-direction:column;gap:6px}
     .toprow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
     header h1{font-size:16px;margin:0}
@@ -30,27 +28,21 @@
     .whoami{font-size:12px;color:#e6eeff;margin-right:2px}
     @media (max-width:430px){ .whoami{display:none} }
     .hidden{display:none!important}
-
     .navchips{display:flex;gap:8px;flex-wrap:wrap}
-
     main{padding:14px;max-width:1100px;margin:0 auto}
     .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
-
     button,select,input,textarea{font:inherit;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:#fff;color:#222}
     .field input,.field select,.field textarea{width:100%}
     label{display:block;margin:0 0 5px 2px;font-weight:600}
-
     .grid{display:grid;grid-template-columns:1fr;gap:10px}
     .col-4,.col-6,.col-8,.col-12{grid-column:span 1}
     @media (min-width: 900px){
       .grid{grid-template-columns:repeat(12,minmax(0,1fr))}
       .col-4{grid-column:span 4}.col-6{grid-column:span 6}.col-8{grid-column:span 8}.col-12{grid-column:span 12}
     }
-
     .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
     .card h3{margin:0 0 4px 0;font-size:16px}
     .muted{color:var(--muted);font-size:12px}
-
     .card.red{border-left:6px solid var(--red)}
     .card.yellow{border-left:6px solid var(--yellow)}
     .card.green{border-left:6px solid var(--green)}
@@ -60,23 +52,19 @@
     .pill.red{border-color:var(--red);color:var(--red)} .pill.yellow{border-color:var(--yellow);color:var(--yellow)} .pill.green{border-color:var(--green);color:var(--green)}
     .meta-line{display:flex;gap:6px;align-items:center;flex-wrap:nowrap;overflow:auto;scrollbar-width:none}
     .meta-line::-webkit-scrollbar{display:none}
-
     .btn-ghost{background:#fff;border:1px solid var(--border);border-radius:999px;padding:7px 14px}
-
     #today-list,#visit-list,#contact-list{display:grid;grid-template-columns:1fr;gap:10px}
     @media (min-width:600px){ #today-list,#contact-list{grid-template-columns:1fr 1fr} }
     @media (min-width:1100px){ #today-list,#contact-list{grid-template-columns:1fr 1fr 1fr} }
-
     .footer{margin-top:16px;color:var(--muted);font-size:12px}
   </style>
-
-  <!-- CSV parser for Import CSV -->
+  <!-- CSV parser -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
 <body>
   <header>
     <div class="toprow">
-      <h1>Hill AFB Visit Tracker (Cloud Sync) — v9</h1>
+      <h1>Hill AFB Visit Tracker (Cloud Sync) — v10</h1>
       <span class="tagline">Cloud sync • Offline • Local cache</span>
 
       <!-- Signed OUT -->
@@ -199,7 +187,7 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function() {
-        navigator.serviceWorker.register('sw.js?v=9'); // bump to fetch latest
+        navigator.serviceWorker.register('sw.js?v=10'); // bump to fetch latest
       });
     }
   </script>
@@ -305,7 +293,7 @@
       const host=$("#today-list"); host.innerHTML="";
       enriched.forEach(function(c){
         const wrap=document.createElement("div");
-        wrap.innerHTML = contactCardHTML(c, {showArchive:false}); // Today: no Archive
+        wrap.innerHTML = contactCardHTML(c, {showArchive:false});
         host.appendChild(wrap.firstChild);
       });
 
@@ -434,12 +422,13 @@
       sel.innerHTML='<option value="">— Select —</option>' + contacts.map(function(c){ return '<option value="'+c.id+'">'+c.name+'</option>'; }).join("");
     }
 
+    /* SINGLE definition (fix): showSection */
     function showSection(id){
       ["view-today","view-contacts","view-log"].forEach(function(v){ document.getElementById(v).classList.add("hidden"); });
       document.getElementById(id).classList.remove("hidden");
     }
 
-    // JSON + CSV import/export wiring
+    // JSON + CSV import/export
     async function exportJSON(){
       const results = await Promise.all([getAll("contacts"), getAll("visits")]);
       const contacts = results[0], visits = results[1];
@@ -465,18 +454,14 @@
         complete: async function(results){
           const rows = results.data || [];
           if (!rows.length){ alert("No rows found."); return; }
-
           function get(o){ for (var i=1;i<arguments.length;i++){ var k=arguments[i]; if (o[k]!==undefined && o[k]!==null && String(o[k]).trim()!=="") return String(o[k]).trim(); } return ""; }
-
           const toAdd = [];
           for (var i=0;i<rows.length;i++){
             const r = rows[i];
-
             const first = get(r,'First Name','FirstName','first_name','First');
             const last  = get(r,'Last Name','LastName','last_name','Last');
             const name  = get(r,'Name') || (first || last ? (first+" "+last).trim() : "");
             if (!name) continue;
-
             const org = get(r,'Account Name','Company','Organization','Account');
             const email = get(r,'Email','Work Email','Primary Email');
             const phone = get(r,'Phone','Work Phone','Mobile','Mobile Phone');
@@ -486,31 +471,14 @@
             const zip    = get(r,'Mailing Postal Code','Postal Code','Zip');
             const country= get(r,'Mailing Country','Country');
             const location = [street, city, state, zip, country].filter(Boolean).join(', ');
-
             const lastVisitStr = get(r,'Last Activity Date','Last Visit','LastContact','Last Contact Date');
             const lastVisit = lastVisitStr ? new Date(lastVisitStr).toISOString() : null;
-
             const k = (name+'|'+(org||'')).toLowerCase();
-            if (byKey[k]) continue; // skip duplicate (same Name+Org)
-
-            toAdd.push({
-              name: name,
-              org: org,
-              location: location,
-              email: email,
-              phone: phone,
-              frequency: 'Monthly',
-              freqDays: 30,
-              lastVisit: lastVisit,
-              notes: '',
-              active: true
-            });
+            if (byKey[k]) continue;
+            toAdd.push({ name, org, location, email, phone, frequency:'Monthly', freqDays:30, lastVisit, notes:'', active:true });
           }
-
           if (!toAdd.length){ alert("Everything in that file already exists (by Name + Org) or no valid rows found."); return; }
-
           if (!confirm("Import "+toAdd.length+" contacts into your account? (Duplicates by Name+Org are skipped)")) return;
-
           for (var j=0;j<toAdd.length;j++){ await addItem("contacts", toAdd[j]); }
           await Promise.all([renderToday(), renderContactsList(), refreshVisitContactDropdown()]);
           alert("CSV import complete.");
@@ -519,10 +487,6 @@
       });
     }
 
-    function showSection(id){
-      ["view-today","view-contacts","view-log"].forEach(function(v){ document.getElementById(v).classList.add("hidden"); });
-      document.getElementById(id).classList.remove("hidden");
-    }
     function wireEvents(){
       document.getElementById("btn-show-today").addEventListener("click", function(){ showSection("view-today"); renderToday(); });
       document.getElementById("btn-show-contacts").addEventListener("click", function(){ showSection("view-contacts"); renderContactsList(); });
