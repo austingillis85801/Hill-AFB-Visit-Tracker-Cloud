@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hill AFB Visit Tracker (Cloud Sync) — v5</title>
+  <title>Hill AFB Visit Tracker (Cloud Sync) — v6</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="VisitTracker">
@@ -14,39 +14,41 @@
     :root { --bg:#f7f7fb; --card:#fff; --text:#222; --muted:#666; --border:#e5e5ef; --green:#26a269; --yellow:#e5a50a; --red:#c01c28; --blue:#1f6feb; }
     *{box-sizing:border-box}
     body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji";background:var(--bg);color:var(--text)}
-    header{position:sticky;top:0;z-index:5;background:linear-gradient(180deg,var(--blue),#3a7cf0);color:#fff;border-bottom:1px solid var(--border);padding:12px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+
+    /* Header compact */
+    header{position:sticky;top:0;z-index:5;background:linear-gradient(180deg,var(--blue),#3a7cf0);color:#fff;border-bottom:1px solid var(--border);padding:8px 12px;display:flex;flex-direction:column;gap:6px}
+    .toprow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
     header h1{font-size:18px;margin:0}
-    header .muted{color:#e6eeff}
+    .tagline{color:#e6eeff;font-size:12px}
+    @media (max-width: 480px){ .tagline{display:none} }
     .right{margin-left:auto}
     .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-    .ghost{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.4);border-radius:8px;padding:8px 10px}
+    .ghost{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.4);border-radius:999px;padding:6px 10px}
+    .navchips{display:flex;gap:8px;flex-wrap:wrap}
+    .navchips button,.navchips label{border-radius:999px}
     .hidden{display:none!important}
 
     main{padding:16px;max-width:1100px;margin:0 auto}
     .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
-    button,select,input,textarea{font:inherit;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:#fff;color:var(--text);width:100%}
-    .toolbar button{width:auto}
-    button.primary{background:var(--blue);color:#fff;border-color:var(--blue)}
-    button.danger{background:var(--red);color:#fff;border-color:var(--red)}
+
+    /* Controls: don’t force 100% width everywhere (only in form fields) */
+    button,select,input,textarea{font:inherit;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:#fff;color:var(--text)}
+    .field input,.field select,.field textarea{width:100%}
     label{display:block;margin:2px 0 6px 2px;font-weight:600}
 
-    /* Mobile-first grids: stack by default */
+    /* Mobile-first grids */
     .grid{display:grid;grid-template-columns:1fr;gap:12px}
     .col-4,.col-6,.col-8,.col-12{grid-column:span 1}
-
-    /* Larger screens: 12-column layout */
     @media (min-width: 900px){
       .grid{grid-template-columns:repeat(12,minmax(0,1fr))}
       .col-4{grid-column:span 4}.col-6{grid-column:span 6}.col-8{grid-column:span 8}.col-12{grid-column:span 12}
-      button,select,input,textarea{width:auto}
-      .field input,.field select,.field textarea{width:100%}
     }
 
     .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
     .card h3{margin:0 0 6px 0;font-size:18px}
     .muted{color:var(--muted);font-size:12px}
 
-    /* Today/Contacts cards: clearer visual priority */
+    /* Today/Contacts cards */
     .card.red{border-left:6px solid var(--red)}
     .card.yellow{border-left:6px solid var(--yellow)}
     .card.green{border-left:6px solid var(--green)}
@@ -59,36 +61,40 @@
     .nowrap{white-space:nowrap}
     .footer{margin-top:24px;color:var(--muted);font-size:12px}
 
-    /* Lists: responsive columns that never squish */
+    /* Lists: responsive columns */
     #today-list,#visit-list,#contact-list{display:grid;grid-template-columns:1fr;gap:12px}
     @media (min-width:600px){ #today-list,#contact-list{grid-template-columns:1fr 1fr} }
     @media (min-width:1000px){ #today-list,#contact-list{grid-template-columns:1fr 1fr 1fr} }
 
-    .authbar input{border-color:rgba(255,255,255,.5);background:rgba(255,255,255,.1);color:#fff;width:180px}
+    .authbar input{border-color:rgba(255,255,255,.5);background:rgba(255,255,255,.1);color:#fff;width:140px}
     .authbar input::placeholder{color:#eef}
+    .whoami{font-size:12px;color:#e6eeff}
+    @media (max-width:420px){ .whoami{display:none} }
   </style>
 </head>
 <body>
   <header>
-    <h1>Hill AFB Visit Tracker (Cloud Sync) — v5</h1>
-    <span class="muted">Cloud sync • Offline • Local cache</span>
+    <div class="toprow">
+      <h1>Hill AFB Visit Tracker (Cloud Sync) — v6</h1>
+      <span class="tagline">Cloud sync • Offline • Local cache</span>
 
-    <!-- Signed OUT -->
-    <div class="right row authbar" id="authbar-unauthed">
-      <input id="auth-email" placeholder="email" autocapitalize="off">
-      <input id="auth-pass" placeholder="password" type="password">
-      <button id="btn-signin" class="ghost">Sign in</button>
-      <button id="btn-signup" class="ghost">Create</button>
+      <!-- Signed OUT -->
+      <div class="right row authbar" id="authbar-unauthed">
+        <input id="auth-email" placeholder="email" autocapitalize="off">
+        <input id="auth-pass" placeholder="password" type="password">
+        <button id="btn-signin" class="ghost">Sign in</button>
+        <button id="btn-signup" class="ghost">Create</button>
+      </div>
+
+      <!-- Signed IN -->
+      <div class="right row authbar hidden" id="authbar-authed">
+        <span id="whoami" class="whoami"></span>
+        <button id="btn-signout" class="ghost">Sign out</button>
+      </div>
     </div>
 
-    <!-- Signed IN -->
-    <div class="right row authbar hidden" id="authbar-authed">
-      <span id="whoami" class="muted"></span>
-      <button id="btn-signout" class="ghost">Sign out</button>
-    </div>
-
-    <!-- Navigation / Backup Controls -->
-    <div class="row" id="nav-controls" style="width:100%">
+    <!-- Compact nav chips -->
+    <div class="navchips" id="nav-controls">
       <button id="btn-show-today" class="ghost">Today</button>
       <button id="btn-show-contacts" class="ghost">Contacts</button>
       <button id="btn-show-log" class="ghost">Log Visit</button>
@@ -102,13 +108,13 @@
     <section id="view-today">
       <div class="toolbar">
         <input id="search" placeholder="Search name/org/location…" style="flex:1">
-        <select id="filter-status" style="width:auto">
+        <select id="filter-status">
           <option value="all">All statuses</option>
           <option value="red">Past due</option>
           <option value="yellow">Due this week</option>
           <option value="green">Not due</option>
         </select>
-        <button id="btn-add-quick" class="primary">+ Quick add</button>
+        <button id="btn-add-quick" class="ghost" style="background:#1f6feb;border-color:#1f6feb;color:#fff">+ Quick add</button>
       </div>
       <div id="today-list"></div>
       <div class="footer">Status rules: <span class="pill red">Past due</span> ≤ today • <span class="pill yellow">Due this week</span> within 7 days • <span class="pill green">Not due</span> &gt; 7 days.</div>
@@ -136,10 +142,10 @@
               <div class="col-6 field"><label>Active</label>
                 <select id="active"><option value="true" selected>Yes</option><option value="false">No</option></select>
               </div>
-              <div class="col-12 field"><label>Notes</label><textarea id="notes" rows="3" style="width:100%"></textarea></div>
+              <div class="col-12 field"><label>Notes</label><textarea id="notes" rows="3"></textarea></div>
               <div class="col-12 row" style="justify-content:flex-start">
-                <button class="primary" type="submit" id="btn-save-contact">Save</button>
-                <button type="button" id="btn-reset">Reset</button>
+                <button class="ghost" style="background:#1f6feb;border-color:#1f6feb;color:#fff" type="submit" id="btn-save-contact">Save</button>
+                <button type="button" id="btn-reset" class="ghost">Reset</button>
                 <span class="muted" style="margin-left:auto">Tip: set Frequency to Custom for exact days.</span>
               </div>
             </div>
@@ -166,13 +172,13 @@
                   <option>Closed Won</option><option>Closed Lost</option><option>Other</option>
                 </select>
               </div>
-              <div class="col-12 field"><label>Notes</label><textarea id="visit-notes" rows="4" style="width:100%"></textarea></div>
+              <div class="col-12 field"><label>Notes</label><textarea id="visit-notes" rows="4"></textarea></div>
               <div class="col-12 field"><label>Next Steps</label><input id="visit-next"></div>
               <div class="col-12 field"><label>Created By</label><input id="visit-createdBy" placeholder="GAR name or email"></div>
             </div>
             <div class="row" style="margin-top:8px">
-              <button class="primary" type="submit">Save Visit</button>
-              <button type="button" id="btn-quick-today">Mark as seen now</button>
+              <button class="ghost" style="background:#1f6feb;border-color:#1f6feb;color:#fff" type="submit">Save Visit</button>
+              <button type="button" id="btn-quick-today" class="ghost">Mark as seen now</button>
             </div>
           </form>
         </div>
@@ -191,12 +197,12 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function() {
-        navigator.serviceWorker.register('sw.js?v=5'); // versioned so updates stick
+        navigator.serviceWorker.register('sw.js?v=6'); // versioned so updates stick
       });
     }
   </script>
 
-  <!-- Main app (iPhone-safe JS) -->
+  <!-- Main app (same logic; iPhone-safe JS) -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import { getFirestore, enableIndexedDbPersistence, collection, addDoc, setDoc, doc, getDocs, getDoc, query, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -269,9 +275,9 @@
             </div>\
           </div>\
           <div class="contact-actions">\
-            <button data-id="'+c.id+'" class="btn-log-now">Log</button>\
-            <button data-id="'+c.id+'" class="btn-edit">Edit</button>\
-            <button data-id="'+c.id+'" class="btn-mark-inactive">Archive</button>\
+            <button data-id="'+c.id+'" class="ghost btn-log-now">Log</button>\
+            <button data-id="'+c.id+'" class="ghost btn-edit">Edit</button>\
+            <button data-id="'+c.id+'" class="ghost btn-mark-inactive">Archive</button>\
           </div>\
         </div>\
       </div>';
