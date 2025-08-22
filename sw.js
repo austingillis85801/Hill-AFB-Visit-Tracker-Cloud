@@ -1,8 +1,8 @@
-// sw.js — v13
+// sw.js — v14
 // PWA app shell + robust caching for same-origin assets, SPA navigation fallback,
-// and cache-busting query support (e.g., ?v=13)
+// and cache-busting query support (e.g., ?v=14)
 
-const VERSION = 'v13';
+const VERSION = 'v14';
 const CACHE_NAME = `visit-tracker-sync-${VERSION}`;
 
 const APP_SHELL = [
@@ -40,11 +40,10 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   if (url.origin !== location.origin) return; // ignore cross-origin (e.g., Firebase)
 
-  // 1) SPA navigations: always serve index.html (offline-friendly)
+  // 1) SPA navigations: serve index.html if offline
   if (req.mode === 'navigate') {
     event.respondWith(
       (async () => {
-        // Try network first; fall back to cached index
         try {
           const net = await fetch(req);
           return net;
@@ -57,7 +56,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2) Static asset requests: stale-while-revalidate, ignoring ?v= cache-busters
+  // 2) Static assets: stale-while-revalidate, ignore cache-busting ?v=
   const isVersionBuster = url.search && url.search.startsWith('?v=');
   const cacheKey = isVersionBuster ? url.pathname : url.pathname + url.search;
 
@@ -77,7 +76,6 @@ self.addEventListener('fetch', (event) => {
       const cached = await caches.match(cacheReq, { ignoreSearch: true });
       const fetchPromise = fetch(req)
         .then((res) => {
-          // Cache only successful, same-origin (basic) responses
           if (res && res.status === 200 && res.type === 'basic') {
             const clone = res.clone();
             caches.open(CACHE_NAME).then((c) => c.put(cacheReq, clone));
@@ -86,7 +84,6 @@ self.addEventListener('fetch', (event) => {
         })
         .catch(() => undefined);
 
-      // Return cached first (fast), then update in background
       return cached || fetchPromise || (url.pathname.endsWith('.html')
         ? caches.match('./index.html', { ignoreSearch: true })
         : new Response('', { status: 504, statusText: 'Offline' }));
