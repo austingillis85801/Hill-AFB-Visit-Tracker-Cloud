@@ -1,10 +1,12 @@
-// sw.js — v14
-// PWA app shell + robust caching for same-origin assets, SPA navigation fallback,
-// and cache-busting query support (e.g., ?v=14)
+// sw.js — v15
+// Adds offline caching for same-origin assets AND whitelisted CDNs (Firebase + jsDelivr).
+// Provides SPA navigation fallback and cache-busting support (?v=15).
 
-const VERSION = 'v14';
+const VERSION = 'v15';
 const CACHE_NAME = `visit-tracker-sync-${VERSION}`;
+const CDN_CACHE = `visit-tracker-cdn-${VERSION}`;
 
+// App shell (same-origin)
 const APP_SHELL = [
   './',
   './index.html',
@@ -14,81 +16,108 @@ const APP_SHELL = [
   './icons/icon-512.png',
 ];
 
-// ----- Install: pre-cache the app shell and become active immediately
+// Whitelisted CDNs (hostnames)
+const CDN_HOSTS = new Set([
+  'www.gstatic.com',   // Firebase SDK
+  'cdn.jsdelivr.net',  // PapaParse
+]);
+
+// Optional: prime CDN entries (runtime fill still applies)
+const APP_CDN = [
+  'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js',
+  'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js',
+  'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js',
+  'https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js',
+];
+
+// ----- Install: pre-cache shell; try to warm CDN (ignore failures)
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
-      .then(() => self.skipWaiting())
-  );
+  event.waitUntil((async () => {
+    const app = await caches.open(CACHE_NAME);
+    await app.addAll(APP_SHELL);
+    try {
+      const cdn = await caches.open(CDN_CACHE);
+      await cdn.addAll(APP_CDN.map(u => new Request(u, { mode: 'no-cors' })));
+    } catch (_) {}
+    await self.skipWaiting();
+  })());
 });
 
-// ----- Activate: clean old caches and take control of clients
+// ----- Activate: remove old caches; take control
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.map((k) => (k !== CACHE_NAME ? caches.delete(k) : Promise.resolve())));
+    await Promise.all(keys.map(k => {
+      if (k !== CACHE_NAME && k !== CDN_CACHE) return caches.delete(k);
+      return Promise.resolve();
+    }));
     await self.clients.claim();
   })());
 });
 
-// ----- Fetch: handle only same-origin GETs
+// Helpers
+const isGET = (req) => req.method === 'GET';
+
+// ----- Fetch: same-origin + CDN caching
 self.addEventListener('fetch', (event) => {
   const req = event.request;
-  if (req.method !== 'GET') return;
+  if (!isGET(req)) return;
 
   const url = new URL(req.url);
-  if (url.origin !== location.origin) return; // ignore cross-origin (e.g., Firebase)
 
-  // 1) SPA navigations: serve index.html if offline
+  // 1) SPA navigations: network-first, fallback to cached index
   if (req.mode === 'navigate') {
-    event.respondWith(
-      (async () => {
-        try {
-          const net = await fetch(req);
-          return net;
-        } catch (_) {
-          const cached = await caches.match('./index.html', { ignoreSearch: true });
-          return cached || new Response('', { status: 504, statusText: 'Offline' });
-        }
-      })()
-    );
+    event.respondWith((async () => {
+      try {
+        return await fetch(req);
+      } catch {
+        const cached = await caches.match('./index.html', { ignoreSearch: true });
+        return cached || new Response('', { status: 504, statusText: 'Offline' });
+      }
+    })());
     return;
   }
 
-  // 2) Static assets: stale-while-revalidate, ignore cache-busting ?v=
-  const isVersionBuster = url.search && url.search.startsWith('?v=');
-  const cacheKey = isVersionBuster ? url.pathname : url.pathname + url.search;
+  // 2) Same-origin static: SWR (ignore ?v=)
+  if (url.origin === location.origin) {
+    const isVersionBuster = url.search && url.search.startsWith('?v=');
+    const cacheKey = isVersionBuster ? url.pathname : url.pathname + url.search;
+    const cacheReq = new Request(cacheKey, { cache: 'no-store' });
 
-  const cacheReq = new Request(cacheKey, {
-    headers: req.headers,
-    mode: req.mode,
-    credentials: req.credentials,
-    redirect: req.redirect,
-    referrer: req.referrer,
-    referrerPolicy: req.referrerPolicy,
-    integrity: req.integrity,
-    cache: 'no-store',
-  });
-
-  event.respondWith(
-    (async () => {
+    event.respondWith((async () => {
       const cached = await caches.match(cacheReq, { ignoreSearch: true });
-      const fetchPromise = fetch(req)
-        .then((res) => {
-          if (res && res.status === 200 && res.type === 'basic') {
-            const clone = res.clone();
-            caches.open(CACHE_NAME).then((c) => c.put(cacheReq, clone));
-          }
-          return res;
-        })
-        .catch(() => undefined);
+      const fetchPromise = fetch(req).then((res) => {
+        if (res && res.status === 200 && (res.type === 'basic' || res.type === 'opaque')) {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then(c => c.put(cacheReq, clone));
+        }
+        return res;
+      }).catch(() => undefined);
+      return cached || fetchPromise || new Response('', { status: 504, statusText: 'Offline' });
+    })());
+    return;
+  }
 
-      return cached || fetchPromise || (url.pathname.endsWith('.html')
-        ? caches.match('./index.html', { ignoreSearch: true })
-        : new Response('', { status: 504, statusText: 'Offline' }));
-    })()
-  );
+  // 3) Whitelisted CDNs: cache-first (so SDKs work offline)
+  if (CDN_HOSTS.has(url.hostname)) {
+    event.respondWith((async () => {
+      const cache = await caches.open(CDN_CACHE);
+      const cached = await cache.match(req, { ignoreSearch: false });
+      if (cached) return cached;
+      try {
+        const res = await fetch(req);
+        if (res && (res.type === 'basic' || res.type === 'opaque')) {
+          cache.put(req, res.clone());
+        }
+        return res;
+      } catch {
+        return new Response('', { status: 504, statusText: 'Offline (CDN)' });
+      }
+    })());
+    return;
+  }
+
+  // 4) Other cross-origins: passthrough
 });
 
 // Optional: allow page to force this SW to take control immediately
