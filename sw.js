@@ -1,8 +1,8 @@
-// sw.js — v15
+// sw.js — v16
 // Adds offline caching for same-origin assets AND whitelisted CDNs (Firebase + jsDelivr).
-// Provides SPA navigation fallback and cache-busting support (?v=15).
+// Provides SPA navigation fallback and cache-busting support (?v=16).
 
-const VERSION = 'v15';
+const VERSION = 'v16';
 const CACHE_NAME = `visit-tracker-sync-${VERSION}`;
 const CDN_CACHE = `visit-tracker-cdn-${VERSION}`;
 
@@ -24,9 +24,9 @@ const CDN_HOSTS = new Set([
 
 // Optional: prime CDN entries (runtime fill still applies)
 const APP_CDN = [
-  'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js',
-  'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js',
-  'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js',
+  'https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js',
+  'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js',
+  'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js',
   'https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js',
 ];
 
