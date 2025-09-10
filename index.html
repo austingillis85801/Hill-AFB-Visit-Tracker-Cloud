@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Hill AFB Visit Tracker (Cloud Sync) — v15</title>
+  <title>Hill AFB Visit Tracker (Cloud Sync) — v16</title>
 
   <!-- PWA / icons -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -67,11 +67,16 @@
 
   <!-- CSV parser -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+  <!-- Firebase (compat SDK to maximize compatibility across environments) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 </head>
 <body>
   <header>
     <div class="toprow">
-      <h1>Hill AFB Visit Tracker (Cloud Sync) — v15</h1>
+      <h1>Hill AFB Visit Tracker (Cloud Sync) — v16</h1>
       <span class="tagline">Cloud sync • Offline • Local cache</span>
 
       <!-- Signed OUT -->
@@ -127,7 +132,6 @@
       <div class="grid">
         <div class="col-6 card">
           <h3 id="form-title">Add Contact</h3>
-          <!-- inline onsubmit prevents native posting; JS still handles submit -->
           <form id="contact-form" onsubmit="event.preventDefault();return false;">
             <input type="hidden" id="contact-id" />
             <div class="grid">
@@ -198,11 +202,11 @@
     </div>
   </main>
 
-  <!-- Register the service worker (cache-bust with v15) -->
+  <!-- Register the service worker (cache-bust with v16) -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function() {
-        navigator.serviceWorker.register('sw.js?v=15');
+        navigator.serviceWorker.register('sw.js?v=16');
       });
     }
   </script>
@@ -213,9 +217,9 @@
       if (!navigator.onLine) return;
       try {
         await Promise.allSettled([
-          fetch('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js', { cache: 'reload', mode: 'no-cors' }),
-          fetch('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js', { cache: 'reload', mode: 'no-cors' }),
-          fetch('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js', { cache: 'reload', mode: 'no-cors' }),
+          fetch('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js', { cache: 'reload', mode: 'no-cors' }),
+          fetch('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js', { cache: 'reload', mode: 'no-cors' }),
+          fetch('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js', { cache: 'reload', mode: 'no-cors' }),
           fetch('https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js', { cache: 'reload', mode: 'no-cors' }),
         ]);
       } catch (_) {}
@@ -223,19 +227,9 @@
     window.addEventListener('load', warmCdnOnce);
   </script>
 
-  <!-- Firebase (modular SDK) + App code -->
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import {
-      getFirestore, enableIndexedDbPersistence, collection, addDoc, setDoc, doc,
-      getDocs, getDoc, query, onSnapshot
-    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-    import {
-      getAuth, onAuthStateChanged, signInWithEmailAndPassword,
-      createUserWithEmailAndPassword, signOut
-    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-
-    // ----- Your Firebase config
+  <!-- App code (Firebase compat API) -->
+  <script>
+    // ----- Firebase config (keep your values)
     const firebaseConfig = {
       apiKey: "AIzaSyAoVOV9GPu6n4M2BVFlOSnXwEUcASjL9Dk",
       authDomain: "hill-afb-tracker-cloud.firebaseapp.com",
@@ -245,68 +239,23 @@
       appId: "1:554533323322:web:ba751bda081e9d5d006b03"
     };
 
-    // ----- Helpers
+    // ----- Init Firebase (compat)
+    const app = firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+    // Enable offline persistence (ignore if already enabled on this device)
+    db.enablePersistence().catch(()=>{});
+
+    // ----- Small helpers
     const $ = (sel) => document.querySelector(sel);
-    let app, auth, db, user = null;
+    let user = null;
+    const defaultDaysMap = { Weekly:7, Biweekly:14, Monthly:30, Quarterly:90 };
 
-    function validConfig(cfg){ return !!(cfg && cfg.apiKey); }
     function colPath(store){ return "users/" + (user ? user.uid : "NOUSER") + "/" + store; }
-
-    async function withRecovery(op){
-      try { return await op(); }
-      catch (e) {
-        const msg = String(e && (e.message || e)).toLowerCase();
-        if (msg.includes('terminated')) {
-          try {
-            if (!window._reApp) window._reApp = initializeApp(firebaseConfig, 're-' + Date.now());
-            db = getFirestore(window._reApp);
-            try { await enableIndexedDbPersistence(db); } catch(_) {}
-            return await op();
-          } catch (e2) { throw e2; }
-        }
-        throw e;
-      }
-    }
-
-    // ----- Data access
-    async function addItem(store, value){
-      if (!user) throw new Error("Sign in first");
-      return await withRecovery(async () => {
-        const ref = await addDoc(collection(db, colPath(store)), value);
-        await setDoc(ref, Object.assign({}, value, { id: ref.id }), { merge: true });
-        return ref.id;
-      });
-    }
-    async function putItem(store, value){
-      if (!user) throw new Error("Sign in first");
-      return await withRecovery(async () => {
-        const id = value.id || (await addItem(store, value));
-        if (!value.id) return id;
-        const ref = doc(db, colPath(store), id);
-        await setDoc(ref, value, { merge: true });
-        return id;
-      });
-    }
-    async function getAll(store){
-      if (!user) return [];
-      return await withRecovery(async () => {
-        const snap = await getDocs(query(collection(db, colPath(store))));
-        return snap.docs.map(d => { const v=d.data(); v.id=d.id; return v; });
-      });
-    }
-    async function getByKey(store, id){
-      return await withRecovery(async () => {
-        const ref = doc(db, colPath(store), id);
-        const snap = await getDoc(ref);
-        return snap.exists() ? (function(){ const v=snap.data(); v.id=snap.id; return v; })() : null;
-      });
-    }
-
-    // ----- Date & status helpers
     function fmtDate(date){ if(!date) return ""; const d=new Date(date); return d.toLocaleDateString()+" "+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); }
     function fmtDateOnly(date){ if(!date) return ""; const d=new Date(date); return d.toISOString().slice(0,10); }
     function dateAddDays(date, days){ const d=new Date(date||new Date()); d.setHours(0,0,0,0); d.setDate(d.getDate()+Number(days||0)); return d; }
-    function defaultDays(freq, fallback){ if(fallback===undefined) fallback=30; if(freq==="Weekly") return 7; if(freq==="Biweekly") return 14; if(freq==="Monthly") return 30; if(freq==="Quarterly") return 90; return fallback; }
+    function defaultDays(freq, fallback){ if(fallback===undefined) fallback=30; return defaultDaysMap[freq]||fallback; }
     function computeStatus(contact){
       const last = contact.lastVisit ? new Date(contact.lastVisit) : null;
       const days = contact.freqDays || defaultDays(contact.frequency, 30);
@@ -316,10 +265,8 @@
       let status = "red"; if(last){ status = diff<=0 ? "red" : (diff<=7 ? "yellow" : "green"); }
       return { nextDue, diffDays: diff, status };
     }
-
     function contactCardHTML(c, opts){
-      opts = opts || {};
-      const showArchive = !!opts.showArchive;
+      opts = opts || {}; const showArchive = !!opts.showArchive;
       return '<div class="card '+c.status+'">\
         <div class="contact-row">\
           <div style="flex:1 1 auto;min-width:220px">\
@@ -338,6 +285,30 @@
           '</div>\
         </div>\
       </div>';
+    }
+
+    // ----- Data access (compat)
+    async function addItem(store, value){
+      if (!user) throw new Error("Sign in first");
+      const ref = await db.collection(colPath(store)).add(value);
+      await db.collection(colPath(store)).doc(ref.id).set(Object.assign({}, value, { id: ref.id }), { merge:true });
+      return ref.id;
+    }
+    async function putItem(store, value){
+      if (!user) throw new Error("Sign in first");
+      const id = value.id || (await addItem(store, value));
+      if (!value.id) return id;
+      await db.collection(colPath(store)).doc(id).set(value, { merge:true });
+      return id;
+    }
+    async function getAll(store){
+      if (!user) return [];
+      const snap = await db.collection(colPath(store)).get();
+      return snap.docs.map(d => { const v=d.data(); v.id=d.id; return v; });
+    }
+    async function getByKey(store, id){
+      const docRef = await db.collection(colPath(store)).doc(id).get();
+      return docRef.exists ? Object.assign({id: docRef.id}, docRef.data()) : null;
     }
 
     // ----- Renderers
@@ -382,7 +353,7 @@
       $("#email").value = c?.email || "";
       $("#phone").value = c?.phone || "";
       $("#frequency").value = c?.frequency || "Monthly";
-      $("#freqDays").value = c?.freqDays || ({"Weekly":7,"Biweekly":14,"Monthly":30,"Quarterly":90}[$("#frequency").value]||30);
+      $("#freqDays").value = c?.freqDays || (defaultDaysMap[$("#frequency").value]||30);
       $("#lastVisit").value = c?.lastVisit ? fmtDateOnly(c.lastVisit) : "";
       $("#active").value = (c && c.active===false) ? "false" : "true";
       $("#notes").value = c?.notes || "";
@@ -399,7 +370,7 @@
 
     async function renderContactsList(){
       const raw = ($("#contact-search")?.value || "").toLowerCase().trim();
-      const tokens = raw.split(/\s+/).filter(Boolean); // multi-word queries
+      const tokens = raw.split(/\s+/).filter(Boolean);
 
       const contacts = (await getAll("contacts"))
         .filter(c => c.active !== false)
@@ -441,7 +412,8 @@
 
     async function renderVisits(){
       const q=$("#visit-search").value?.toLowerCase().trim()||"";
-      const [contacts, visits] = await Promise.all([getAll("contacts"), getAll("visits")]);
+      const [contacts, visitsSnap] = await Promise.all([getAll("contacts"), db.collection(colPath("visits")).get()]);
+      const visits = visitsSnap.docs.map(d=>Object.assign({id:d.id}, d.data()));
       const nameById = {}; contacts.forEach(c=> nameById[c.id]=c.name);
       const filtered = visits.filter(v=>{
         const hay=((nameById[v.contactId]||"")+" "+(v.notes||"")+" "+(v.nextSteps||"")+" "+(v.outcome||"")).toLowerCase();
@@ -476,7 +448,7 @@
         email: $("#email").value.trim(),
         phone: $("#phone").value.trim(),
         frequency: freq,
-        freqDays: Number($("#freqDays").value || ({"Weekly":7,"Biweekly":14,"Monthly":30,"Quarterly":90}[freq]||30)),
+        freqDays: Number($("#freqDays").value || (defaultDaysMap[freq]||30)),
         lastVisit: $("#lastVisit").value ? new Date($("#lastVisit").value).toISOString() : null,
         notes: $("#notes").value.trim(),
         active: $("#active").value === "true"
@@ -513,7 +485,12 @@
     }
 
     async function exportJSON(){
-      const [contacts, visits] = await Promise.all([getAll("contacts"), getAll("visits")]);
+      const [contactsSnap, visitsSnap] = await Promise.all([
+        db.collection(colPath("contacts")).get(),
+        db.collection(colPath("visits")).get()
+      ]);
+      const contacts = contactsSnap.docs.map(d=>Object.assign({id:d.id}, d.data()));
+      const visits = visitsSnap.docs.map(d=>Object.assign({id:d.id}, d.data()));
       const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), contacts, visits }, null, 2)], {type:"application/json"});
       const a = document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="visit-tracker-backup.json"; a.click(); URL.revokeObjectURL(a.href);
     }
@@ -599,7 +576,7 @@
       $("#btn-reset").addEventListener("click", clearContactForm);
       $("#frequency").addEventListener("change", ()=>{
         const f=$("#frequency").value;
-        $("#freqDays").value = ({"Weekly":7,"Biweekly":14,"Monthly":30,"Quarterly":90}[f]||Number($("#freqDays").value||30));
+        $("#freqDays").value = (defaultDaysMap[f]||Number($("#freqDays").value||30));
       });
 
       $("#visit-form").addEventListener("submit", saveVisitFromForm);
@@ -617,15 +594,14 @@
       $("#contact-search").addEventListener("search", renderContactsList);
       $("#contact-search").addEventListener("keydown", (e)=>{ if (e.key === "Enter"){ e.preventDefault(); renderContactsList(); } });
 
-      // Auth buttons + Enter key in either field
+      // Auth buttons + Enter key in either field (always active)
       const signin = async ()=>{
         const email=$("#auth-email").value.trim();
         const pass=$("#auth-pass").value;
         if(!email || !pass){ alert("Please enter email and password."); return; }
-        if (!navigator.onLine) { alert("You're offline. Sign-in requires an internet connection."); return; }
         try{
           $("#btn-signin").disabled=true; $("#btn-signin").textContent="Signing in…";
-          await signInWithEmailAndPassword(auth, email, pass);
+          await auth.signInWithEmailAndPassword(email, pass);
         }catch(e){ alert("Sign in failed: " + (e.message || e)); }
         finally{ $("#btn-signin").disabled=false; $("#btn-signin").textContent="Sign in"; }
       };
@@ -634,11 +610,10 @@
       $("#auth-pass").addEventListener("keydown", (e)=>{ if(e.key==="Enter"){ e.preventDefault(); signin(); } });
 
       $("#btn-signup").addEventListener("click", async ()=>{
-        if (!navigator.onLine) { alert("You're offline. Account creation requires an internet connection."); return; }
         const email=$("#auth-email").value.trim(); const pass=$("#auth-pass").value;
-        try { await createUserWithEmailAndPassword(auth, email, pass); } catch (e) { alert("Create failed: "+(e.message||e)); }
+        try { await auth.createUserWithEmailAndPassword(email, pass); } catch (e) { alert("Create failed: "+(e.message||e)); }
       });
-      $("#btn-signout").addEventListener("click", async ()=>{ await signOut(auth); });
+      $("#btn-signout").addEventListener("click", async ()=>{ await auth.signOut(); });
     }
 
     function updateAuthUI(){
@@ -648,18 +623,16 @@
       else { una.classList.remove("hidden"); aut.classList.add("hidden"); }
     }
     function clearUI(){ $("#today-list").innerHTML=""; $("#contact-list").innerHTML=""; $("#visit-list").innerHTML=""; }
+
     function subscribeRealtime(){
-      onSnapshot(collection(db, colPath("contacts")), ()=>{ renderToday(); renderContactsList(); refreshVisitContactDropdown(); });
-      onSnapshot(collection(db, colPath("visits")), ()=>{ renderVisits(); });
+      db.collection(colPath("contacts")).onSnapshot(()=>{ renderToday(); renderContactsList(); refreshVisitContactDropdown(); });
+      db.collection(colPath("visits")).onSnapshot(()=>{ renderVisits(); });
     }
 
     // ----- Init
-    (async function init(){
-      if (!validConfig(firebaseConfig)) return;
-      app = initializeApp(firebaseConfig); auth = getAuth(app); db = getFirestore(app);
-      try { await enableIndexedDbPersistence(db); } catch {}
+    (function init(){
       wireEvents();
-      onAuthStateChanged(auth, (u)=>{
+      auth.onAuthStateChanged((u)=>{
         user=u||null; updateAuthUI();
         if(user){ subscribeRealtime(); loadAllAndRender(); } else { clearUI(); }
       });
@@ -674,8 +647,7 @@
       const offline = !navigator.onLine;
       const banner = document.getElementById('offline-banner');
       if (banner) banner.style.display = offline ? 'block' : 'none';
-      const btn = document.getElementById('btn-signin');
-      if (btn) btn.disabled = offline;
+      // Sign-in remains enabled; if actually offline, Firebase will just error and show the alert
     }
     window.addEventListener('online', updateOnlineUI);
     window.addEventListener('offline', updateOnlineUI);
