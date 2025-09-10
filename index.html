@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Hill AFB Visit Tracker (Cloud Sync) — v14</title>
+  <title>Hill AFB Visit Tracker (Cloud Sync) — v15</title>
 
   <!-- PWA / icons -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -71,7 +71,7 @@
 <body>
   <header>
     <div class="toprow">
-      <h1>Hill AFB Visit Tracker (Cloud Sync) — v14</h1>
+      <h1>Hill AFB Visit Tracker (Cloud Sync) — v15</h1>
       <span class="tagline">Cloud sync • Offline • Local cache</span>
 
       <!-- Signed OUT -->
@@ -100,6 +100,11 @@
       <button id="btn-show-log" class="chip">Log Visit</button>
     </div>
   </header>
+
+  <!-- Offline banner -->
+  <div id="offline-banner" style="display:none;padding:8px 12px;background:#fff3cd;border:1px solid #ffeeba;color:#856404;margin:10px;border-radius:8px;">
+    You’re offline. You can keep working with cached data if you were already signed in. Sign-in requires internet.
+  </div>
 
   <main>
     <section id="view-today">
@@ -193,16 +198,32 @@
     </div>
   </main>
 
+  <!-- Register the service worker (cache-bust with v15) -->
   <script>
-    // Register the service worker (cache-bust with v14)
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function() {
-        navigator.serviceWorker.register('sw.js?v=14');
+        navigator.serviceWorker.register('sw.js?v=15');
       });
     }
   </script>
 
-  <!-- Firebase (modular SDK) -->
+  <!-- Warm CDN cache once (so Firebase SDK & PapaParse work when offline) -->
+  <script>
+    async function warmCdnOnce(){
+      if (!navigator.onLine) return;
+      try {
+        await Promise.allSettled([
+          fetch('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js', { cache: 'reload', mode: 'no-cors' }),
+          fetch('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js', { cache: 'reload', mode: 'no-cors' }),
+          fetch('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js', { cache: 'reload', mode: 'no-cors' }),
+          fetch('https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js', { cache: 'reload', mode: 'no-cors' }),
+        ]);
+      } catch (_) {}
+    }
+    window.addEventListener('load', warmCdnOnce);
+  </script>
+
+  <!-- Firebase (modular SDK) + App code -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import {
@@ -214,7 +235,7 @@
       createUserWithEmailAndPassword, signOut
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-    // ----- Your Firebase config (keep your values)
+    // ----- Your Firebase config
     const firebaseConfig = {
       apiKey: "AIzaSyAoVOV9GPu6n4M2BVFlOSnXwEUcASjL9Dk",
       authDomain: "hill-afb-tracker-cloud.firebaseapp.com",
@@ -601,6 +622,7 @@
         const email=$("#auth-email").value.trim();
         const pass=$("#auth-pass").value;
         if(!email || !pass){ alert("Please enter email and password."); return; }
+        if (!navigator.onLine) { alert("You're offline. Sign-in requires an internet connection."); return; }
         try{
           $("#btn-signin").disabled=true; $("#btn-signin").textContent="Signing in…";
           await signInWithEmailAndPassword(auth, email, pass);
@@ -612,6 +634,7 @@
       $("#auth-pass").addEventListener("keydown", (e)=>{ if(e.key==="Enter"){ e.preventDefault(); signin(); } });
 
       $("#btn-signup").addEventListener("click", async ()=>{
+        if (!navigator.onLine) { alert("You're offline. Account creation requires an internet connection."); return; }
         const email=$("#auth-email").value.trim(); const pass=$("#auth-pass").value;
         try { await createUserWithEmailAndPassword(auth, email, pass); } catch (e) { alert("Create failed: "+(e.message||e)); }
       });
@@ -643,6 +666,20 @@
     })();
 
     async function loadAllAndRender(){ await Promise.all([renderToday(), renderContactsList(), renderVisits(), refreshVisitContactDropdown()]); showSection("view-today"); }
+  </script>
+
+  <!-- Offline UI toggles -->
+  <script>
+    function updateOnlineUI(){
+      const offline = !navigator.onLine;
+      const banner = document.getElementById('offline-banner');
+      if (banner) banner.style.display = offline ? 'block' : 'none';
+      const btn = document.getElementById('btn-signin');
+      if (btn) btn.disabled = offline;
+    }
+    window.addEventListener('online', updateOnlineUI);
+    window.addEventListener('offline', updateOnlineUI);
+    updateOnlineUI();
   </script>
 
   <!-- Friendly global error to surface issues quickly -->
