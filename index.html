@@ -624,9 +624,19 @@
     }
     function clearUI(){ $("#today-list").innerHTML=""; $("#contact-list").innerHTML=""; $("#visit-list").innerHTML=""; }
 
+    let unsubscribeContacts = null;
+    let unsubscribeVisits = null;
+
     function subscribeRealtime(){
-      db.collection(colPath("contacts")).onSnapshot(()=>{ renderToday(); renderContactsList(); refreshVisitContactDropdown(); });
-      db.collection(colPath("visits")).onSnapshot(()=>{ renderVisits(); });
+      if (typeof unsubscribeContacts === "function") { unsubscribeContacts(); unsubscribeContacts = null; }
+      if (typeof unsubscribeVisits === "function") { unsubscribeVisits(); unsubscribeVisits = null; }
+
+      unsubscribeContacts = db.collection(colPath("contacts")).onSnapshot(()=>{
+        renderToday();
+        renderContactsList();
+        refreshVisitContactDropdown();
+      });
+      unsubscribeVisits = db.collection(colPath("visits")).onSnapshot(()=>{ renderVisits(); });
     }
 
     // ----- Init
@@ -634,7 +644,14 @@
       wireEvents();
       auth.onAuthStateChanged((u)=>{
         user=u||null; updateAuthUI();
-        if(user){ subscribeRealtime(); loadAllAndRender(); } else { clearUI(); }
+        if(user){
+          subscribeRealtime();
+          loadAllAndRender();
+        } else {
+          if (typeof unsubscribeContacts === "function") { unsubscribeContacts(); unsubscribeContacts = null; }
+          if (typeof unsubscribeVisits === "function") { unsubscribeVisits(); unsubscribeVisits = null; }
+          clearUI();
+        }
       });
     })();
 
