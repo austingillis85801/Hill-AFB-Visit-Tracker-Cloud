@@ -498,11 +498,21 @@
       const text=await file.text(); const data=JSON.parse(text);
       if(!data.contacts||!data.visits){ alert("Invalid file."); return; }
       if(!confirm("Importing will MERGE with existing records. Continue?")) return;
-      for (const c of data.contacts){ const copy=Object.assign({}, c); delete copy.id; await addItem("contacts", copy); }
-      const all=await getAll("contacts"); const byName={}; all.forEach(c=>{ byName[c.name]=c.id; });
+      const idMap={};
+      for (const c of data.contacts){
+        const copy=Object.assign({}, c);
+        delete copy.id;
+        const newId=await addItem("contacts", copy);
+        if(c.id!==undefined&&c.id!==null) idMap[c.id]=newId;
+      }
       for (const v of data.visits){
-        const name=(data.contacts.find(c=>c.id===v.contactId)||{}).name;
-        const newId=name?byName[name]:null; if(newId){ const copy2=Object.assign({}, v); delete copy2.id; copy2.contactId=newId; await addItem("visits", copy2); }
+        const newId=idMap[v.contactId];
+        if(newId){
+          const copy2=Object.assign({}, v);
+          delete copy2.id;
+          copy2.contactId=newId;
+          await addItem("visits", copy2);
+        }
       }
       await Promise.all([renderToday(), renderContactsList(), renderVisits(), refreshVisitContactDropdown()]);
       alert("Import complete.");
