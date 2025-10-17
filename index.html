@@ -36,10 +36,13 @@
     .hidden{display:none!important}
     .navchips{display:flex;gap:8px;flex-wrap:wrap}
     main{padding:14px;max-width:1100px;margin:0 auto}
-    .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+    .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;position:relative}
     button,select,input,textarea{font:inherit;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:#fff;color:#222}
-    .search-wrap{position:relative;display:flex;align-items:center;width:100%;}
-    .search-wrap input{width:100%;padding-right:34px;}
+    .search-wrap{position:relative;display:flex;align-items:center;flex:0 1 220px;width:100%;transition:flex-basis .18s ease,width .18s ease}
+    .search-wrap input{width:100%;padding-right:34px;transition:box-shadow .18s ease,border-color .18s ease}
+    .toolbar.search-expanded .search-wrap{flex:1 1 100%;z-index:3;}
+    .toolbar.search-expanded .search-wrap input{border-color:var(--blue);box-shadow:0 8px 24px rgba(31,111,235,.18);background:#fff}
+    .toolbar.search-expanded #filter-status{opacity:0;pointer-events:none;visibility:hidden;position:absolute}
     .clear-input{position:absolute;right:6px;display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;border:none;background:rgba(0,0,0,0.08);color:var(--muted);font-size:18px;line-height:1;cursor:pointer;transition:background 0.15s ease,color 0.15s ease,outline 0.15s ease;}
     .clear-input:hover,.clear-input:focus{background:rgba(0,0,0,0.15);color:var(--text);outline:2px solid var(--blue);outline-offset:2px;}
     .compact-form{padding:12px;}
@@ -592,6 +595,30 @@
       toggle();
     }
 
+    function setupExpandableSearch(){
+      const toolbar = document.querySelector("#view-today .toolbar");
+      const input = $("#search");
+      const clearBtn = $("#btn-clear-search");
+      if (!toolbar || !input) return;
+      const expand = ()=>{
+        if (input.dataset.suppressExpand === "true"){ delete input.dataset.suppressExpand; return; }
+        toolbar.classList.add("search-expanded");
+      };
+      const collapse = ()=>{ if (!(input.value||"").trim()) toolbar.classList.remove("search-expanded"); };
+      input.addEventListener("focus", expand);
+      input.addEventListener("blur", ()=> setTimeout(collapse, 80));
+      input.addEventListener("input", ()=>{ if ((input.value||"").trim()) expand(); else collapse(); });
+      clearBtn?.addEventListener("mousedown", ()=>{ input.dataset.suppressExpand = "true"; });
+      clearBtn?.addEventListener("mouseleave", ()=>{ delete input.dataset.suppressExpand; });
+      clearBtn?.addEventListener("click", ()=>{
+        setTimeout(()=>{
+          delete input.dataset.suppressExpand;
+          collapse();
+        }, 0);
+      });
+      if ((input.value||"").trim()) expand();
+    }
+
     function wireEvents(){
       $("#btn-show-today").addEventListener("click", ()=>{ showSection("view-today"); renderToday(); });
       $("#btn-show-contacts").addEventListener("click", ()=>{ showSection("view-contacts"); renderContactsList(); });
@@ -636,6 +663,7 @@
 
       attachClearableSearch("#search", "#btn-clear-search");
       attachClearableSearch("#contact-search", "#btn-clear-contact-search");
+      setupExpandableSearch();
 
       // Auth buttons + Enter key in either field (always active)
       const signin = async ()=>{
