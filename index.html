@@ -38,6 +38,14 @@
     main{padding:14px;max-width:1100px;margin:0 auto}
     .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
     button,select,input,textarea{font:inherit;padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:#fff;color:#222}
+    .search-wrap{position:relative;display:flex;align-items:center;width:100%;}
+    .search-wrap input{width:100%;padding-right:34px;}
+    .clear-input{position:absolute;right:6px;display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;border:none;background:rgba(0,0,0,0.08);color:var(--muted);font-size:18px;line-height:1;cursor:pointer;transition:background 0.15s ease,color 0.15s ease,outline 0.15s ease;}
+    .clear-input:hover,.clear-input:focus{background:rgba(0,0,0,0.15);color:var(--text);outline:2px solid var(--blue);outline-offset:2px;}
+    .compact-form{padding:12px;}
+    .compact-form .grid{gap:8px;}
+    .compact-form .field label{margin:0 0 3px 2px;}
+    .compact-form .field input,.compact-form .field select{padding:8px 10px;}
     .field input,.field select,.field textarea{width:100%}
     label{display:block;margin:0 0 5px 2px;font-weight:600}
     .grid{display:grid;grid-template-columns:1fr;gap:10px}
@@ -114,7 +122,10 @@
   <main>
     <section id="view-today">
       <div class="toolbar">
-        <input id="search" placeholder="Search name/org/location…" style="flex:1" autocomplete="off" />
+        <div class="search-wrap" style="flex:1">
+          <input id="search" placeholder="Search name/org/location…" autocomplete="off" />
+          <button type="button" id="btn-clear-search" class="clear-input hidden" aria-label="Clear search">&times;</button>
+        </div>
         <label for="filter-status" class="hidden">Status filter</label>
         <select id="filter-status">
           <option value="all">All statuses</option>
@@ -130,7 +141,7 @@
 
     <section id="view-contacts" class="hidden">
       <div class="grid">
-        <div class="col-6 card">
+        <div class="col-6 card compact-form">
           <h3 id="form-title">Add Contact</h3>
           <form id="contact-form" onsubmit="event.preventDefault();return false;">
             <input type="hidden" id="contact-id" />
@@ -138,8 +149,6 @@
               <div class="col-6 field"><label for="name">Name</label><input id="name" required autocomplete="name" /></div>
               <div class="col-6 field"><label for="org">Org</label><input id="org" autocomplete="organization" /></div>
               <div class="col-12 field"><label for="location">Location</label><input id="location" autocomplete="address-line1" /></div>
-              <div class="col-6 field"><label for="email">Email</label><input id="email" type="email" autocomplete="email" /></div>
-              <div class="col-6 field"><label for="phone">Phone</label><input id="phone" autocomplete="tel" /></div>
               <div class="col-6 field"><label for="frequency">Frequency</label>
                 <select id="frequency">
                   <option>Weekly</option><option>Biweekly</option><option selected>Monthly</option><option>Quarterly</option><option>Custom</option>
@@ -150,7 +159,6 @@
               <div class="col-6 field"><label for="active">Active</label>
                 <select id="active"><option value="true" selected>Yes</option><option value="false">No</option></select>
               </div>
-              <div class="col-12 field"><label for="notes">Notes</label><textarea id="notes" rows="3"></textarea></div>
               <div class="col-12 row" style="justify-content:flex-start">
                 <button class="chip strong" type="submit" id="btn-save-contact">Save</button>
                 <button type="button" id="btn-reset" class="chip">Reset</button>
@@ -160,7 +168,12 @@
           </form>
         </div>
         <div class="col-6">
-          <div class="toolbar"><input id="contact-search" placeholder="Search contacts…" style="flex:1" autocomplete="off" /></div>
+          <div class="toolbar">
+            <div class="search-wrap" style="flex:1">
+              <input id="contact-search" placeholder="Search contacts…" autocomplete="off" />
+              <button type="button" id="btn-clear-contact-search" class="clear-input hidden" aria-label="Clear contact search">&times;</button>
+            </div>
+          </div>
           <div id="contact-list"></div>
         </div>
       </div>
@@ -350,13 +363,10 @@
       $("#name").value = c?.name || "";
       $("#org").value = c?.org || "";
       $("#location").value = c?.location || "";
-      $("#email").value = c?.email || "";
-      $("#phone").value = c?.phone || "";
       $("#frequency").value = c?.frequency || "Monthly";
       $("#freqDays").value = c?.freqDays || (defaultDaysMap[$("#frequency").value]||30);
       $("#lastVisit").value = c?.lastVisit ? fmtDateOnly(c.lastVisit) : "";
       $("#active").value = (c && c.active===false) ? "false" : "true";
-      $("#notes").value = c?.notes || "";
     }
 
     function clearContactForm(){
@@ -381,7 +391,7 @@
       contacts
         .filter(c => {
           if (!tokens.length) return true;
-          const hay = [c.name, c.org, c.location, c.email, c.phone]
+          const hay = [c.name, c.org, c.location]
             .filter(Boolean).join(" ").toLowerCase();
           return tokens.every(t => hay.includes(t));
         })
@@ -441,18 +451,15 @@
       e?.preventDefault?.();
       const existingId = ($("#contact-id").value||"").trim();
       const freq = $("#frequency").value;
-      const record = {
-        name: $("#name").value.trim(),
-        org: $("#org").value.trim(),
-        location: $("#location").value.trim(),
-        email: $("#email").value.trim(),
-        phone: $("#phone").value.trim(),
-        frequency: freq,
-        freqDays: Number($("#freqDays").value || (defaultDaysMap[freq]||30)),
-        lastVisit: $("#lastVisit").value ? new Date($("#lastVisit").value).toISOString() : null,
-        notes: $("#notes").value.trim(),
-        active: $("#active").value === "true"
-      };
+      const existing = existingId ? await getByKey("contacts", existingId) : null;
+      const record = existing ? Object.assign({}, existing) : {};
+      record.name = $("#name").value.trim();
+      record.org = $("#org").value.trim();
+      record.location = $("#location").value.trim();
+      record.frequency = freq;
+      record.freqDays = Number($("#freqDays").value || (defaultDaysMap[freq]||30));
+      record.lastVisit = $("#lastVisit").value ? new Date($("#lastVisit").value).toISOString() : null;
+      record.active = $("#active").value === "true";
       if (!record.name){ alert("Name is required."); return; }
       if (existingId) { record.id = existingId; await putItem("contacts", record); $("#contact-id").value = existingId; }
       else { const newId = await addItem("contacts", record); $("#contact-id").value = newId; }
@@ -461,8 +468,10 @@
     }
 
     async function logVisitNow(contact){
-      const notes = prompt("Notes for " + (contact?.name || "contact") + "?", "");
-      const visit={ contactId: contact.id, visitDate: new Date().toISOString(), notes: notes||"", outcome:"Follow-up", nextSteps:"", createdBy:"" };
+      if (!contact) return;
+      const ok = confirm("Mark " + (contact.name || "this contact") + " as visited now?");
+      if (!ok) return;
+      const visit={ contactId: contact.id, visitDate: new Date().toISOString(), notes: "", outcome:"Follow-up", nextSteps:"", createdBy:"" };
       await addItem("visits", visit);
       contact.lastVisit = visit.visitDate; await putItem("contacts", contact);
       await Promise.all([renderToday(), renderVisits()]);
@@ -563,6 +572,26 @@
     // ----- Views & wiring
     function showSection(id){ ["view-today","view-contacts","view-log"].forEach(v=>document.getElementById(v).classList.add("hidden")); document.getElementById(id).classList.remove("hidden"); }
 
+    function attachClearableSearch(inputSel, buttonSel){
+      const input = $(inputSel);
+      const button = $(buttonSel);
+      if (!input || !button) return;
+      const toggle = ()=>{
+        const hasValue = !!(input.value && input.value.length);
+        button.classList.toggle("hidden", !hasValue);
+      };
+      input.addEventListener("input", toggle);
+      input.addEventListener("search", toggle);
+      button.addEventListener("click", ()=>{
+        if (!input.value){ input.focus(); return; }
+        input.value = "";
+        input.dispatchEvent(new Event("input", { bubbles:true }));
+        input.focus();
+        toggle();
+      });
+      toggle();
+    }
+
     function wireEvents(){
       $("#btn-show-today").addEventListener("click", ()=>{ showSection("view-today"); renderToday(); });
       $("#btn-show-contacts").addEventListener("click", ()=>{ showSection("view-contacts"); renderContactsList(); });
@@ -597,12 +626,16 @@
 
       // Today filters
       $("#search").addEventListener("input", renderToday);
+      $("#search").addEventListener("search", renderToday);
       $("#filter-status").addEventListener("change", renderToday);
 
       // Contacts search: input, iOS 'search' clear, Enter key
       $("#contact-search").addEventListener("input", renderContactsList);
       $("#contact-search").addEventListener("search", renderContactsList);
       $("#contact-search").addEventListener("keydown", (e)=>{ if (e.key === "Enter"){ e.preventDefault(); renderContactsList(); } });
+
+      attachClearableSearch("#search", "#btn-clear-search");
+      attachClearableSearch("#contact-search", "#btn-clear-contact-search");
 
       // Auth buttons + Enter key in either field (always active)
       const signin = async ()=>{
