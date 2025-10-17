@@ -45,6 +45,9 @@
     .toolbar.search-expanded #filter-status{opacity:0;pointer-events:none;visibility:hidden;position:absolute}
     .clear-input{position:absolute;right:6px;display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;border:none;background:rgba(0,0,0,0.08);color:var(--muted);font-size:18px;line-height:1;cursor:pointer;transition:background 0.15s ease,color 0.15s ease,outline 0.15s ease;}
     .clear-input:hover,.clear-input:focus{background:rgba(0,0,0,0.15);color:var(--text);outline:2px solid var(--blue);outline-offset:2px;}
+    #contact-form-placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;text-align:center;min-height:220px;}
+    #contact-form-placeholder h3{margin:4px 0 0 0;font-size:18px;}
+    #contact-form-placeholder p{margin:0;color:var(--muted);font-size:13px;}
     .compact-form{padding:12px;}
     .compact-form .grid{gap:8px;}
     .compact-form .field label{margin:0 0 3px 2px;}
@@ -144,31 +147,39 @@
 
     <section id="view-contacts" class="hidden">
       <div class="grid">
-        <div class="col-6 card compact-form">
-          <h3 id="form-title">Add Contact</h3>
-          <form id="contact-form" onsubmit="event.preventDefault();return false;">
-            <input type="hidden" id="contact-id" />
-            <div class="grid">
-              <div class="col-6 field"><label for="name">Name</label><input id="name" required autocomplete="name" /></div>
-              <div class="col-6 field"><label for="org">Org</label><input id="org" autocomplete="organization" /></div>
-              <div class="col-12 field"><label for="location">Location</label><input id="location" autocomplete="address-line1" /></div>
-              <div class="col-6 field"><label for="frequency">Frequency</label>
-                <select id="frequency">
-                  <option>Weekly</option><option>Biweekly</option><option selected>Monthly</option><option>Quarterly</option><option>Custom</option>
-                </select>
+        <div class="col-6" id="contact-form-column">
+          <div id="contact-form-placeholder" class="card">
+            <h3>Add Contact</h3>
+            <p>Build your directory one contact at a time.</p>
+            <button type="button" id="btn-show-contact-form" class="chip strong">+ Add contact</button>
+          </div>
+          <div class="card compact-form hidden" id="contact-form-card">
+            <h3 id="form-title">Add Contact</h3>
+            <form id="contact-form" onsubmit="event.preventDefault();return false;">
+              <input type="hidden" id="contact-id" />
+              <div class="grid">
+                <div class="col-6 field"><label for="name">Name</label><input id="name" required autocomplete="name" /></div>
+                <div class="col-6 field"><label for="org">Org</label><input id="org" autocomplete="organization" /></div>
+                <div class="col-12 field"><label for="location">Location</label><input id="location" autocomplete="address-line1" /></div>
+                <div class="col-6 field"><label for="frequency">Frequency</label>
+                  <select id="frequency">
+                    <option>Weekly</option><option>Biweekly</option><option selected>Monthly</option><option>Quarterly</option><option>Custom</option>
+                  </select>
+                </div>
+                <div class="col-6 field"><label for="freqDays">Frequency (days)</label><input id="freqDays" type="number" min="1" value="30" /></div>
+                <div class="col-6 field"><label for="lastVisit">Last Visit</label><input id="lastVisit" type="date" /></div>
+                <div class="col-6 field"><label for="active">Active</label>
+                  <select id="active"><option value="true" selected>Yes</option><option value="false">No</option></select>
+                </div>
+                <div class="col-12 row" style="justify-content:flex-start">
+                  <button class="chip strong" type="submit" id="btn-save-contact">Save</button>
+                  <button type="button" id="btn-reset" class="chip">Reset</button>
+                  <button type="button" id="btn-cancel-contact" class="chip">Cancel</button>
+                  <span class="muted" style="margin-left:auto">Tip: set Frequency to Custom for exact days.</span>
+                </div>
               </div>
-              <div class="col-6 field"><label for="freqDays">Frequency (days)</label><input id="freqDays" type="number" min="1" value="30" /></div>
-              <div class="col-6 field"><label for="lastVisit">Last Visit</label><input id="lastVisit" type="date" /></div>
-              <div class="col-6 field"><label for="active">Active</label>
-                <select id="active"><option value="true" selected>Yes</option><option value="false">No</option></select>
-              </div>
-              <div class="col-12 row" style="justify-content:flex-start">
-                <button class="chip strong" type="submit" id="btn-save-contact">Save</button>
-                <button type="button" id="btn-reset" class="chip">Reset</button>
-                <span class="muted" style="margin-left:auto">Tip: set Frequency to Custom for exact days.</span>
-              </div>
-            </div>
-          </form>
+            </form>
+          </div>
         </div>
         <div class="col-6">
           <div class="toolbar">
@@ -353,14 +364,29 @@
 
       host.querySelectorAll(".btn-edit").forEach(btn=>btn.addEventListener("click", async e=>{
         const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id);
-        showSection("view-contacts"); populateContactForm(c);
+        showSection("view-contacts");
+        populateContactForm(c);
+        window.scrollTo({top:0, behavior:'smooth'});
       }));
       host.querySelectorAll(".btn-log-now").forEach(btn=>btn.addEventListener("click", async e=>{
         const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id); await logVisitNow(c);
       }));
     }
 
+    function showContactForm(){
+      $("#contact-form-card")?.classList.remove("hidden");
+      $("#contact-form-placeholder")?.classList.add("hidden");
+    }
+
+    function hideContactForm(opts){
+      opts = opts || {};
+      $("#contact-form-card")?.classList.add("hidden");
+      $("#contact-form-placeholder")?.classList.remove("hidden");
+      if (opts.reset !== false) clearContactForm();
+    }
+
     function populateContactForm(c){
+      showContactForm();
       $("#form-title").textContent = (c && c.id) ? "Edit Contact" : "Add Contact";
       $("#contact-id").value = (c && c.id) ? c.id : "";
       $("#name").value = c?.name || "";
@@ -370,6 +396,7 @@
       $("#freqDays").value = c?.freqDays || (defaultDaysMap[$("#frequency").value]||30);
       $("#lastVisit").value = c?.lastVisit ? fmtDateOnly(c.lastVisit) : "";
       $("#active").value = (c && c.active===false) ? "false" : "true";
+      setTimeout(()=> $("#name")?.focus(), 0);
     }
 
     function clearContactForm(){
@@ -406,7 +433,9 @@
         });
 
       host.querySelectorAll(".btn-edit").forEach(btn=>btn.addEventListener("click", async e=>{
-        const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id); populateContactForm(c);
+        const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id);
+        populateContactForm(c);
+        window.scrollTo({top:0, behavior:'smooth'});
       }));
       host.querySelectorAll(".btn-log-now").forEach(btn=>btn.addEventListener("click", async e=>{
         const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id); await logVisitNow(c);
@@ -467,6 +496,7 @@
       if (existingId) { record.id = existingId; await putItem("contacts", record); $("#contact-id").value = existingId; }
       else { const newId = await addItem("contacts", record); $("#contact-id").value = newId; }
       await Promise.all([renderToday(), renderContactsList(), refreshVisitContactDropdown()]);
+      hideContactForm();
       showSection("view-today");
     }
 
@@ -624,8 +654,16 @@
       $("#btn-show-contacts").addEventListener("click", ()=>{ showSection("view-contacts"); renderContactsList(); });
       $("#btn-show-log").addEventListener("click", ()=>{ showSection("view-log"); renderVisits(); });
 
+      $("#btn-show-contact-form").addEventListener("click", ()=>{
+        showSection("view-contacts");
+        showContactForm();
+        clearContactForm();
+        $("#name").focus();
+      });
+
       $("#btn-add-quick").addEventListener("click", ()=>{
         showSection("view-contacts");
+        showContactForm();
         clearContactForm();
         $("#name").focus();
         window.scrollTo({top:0, behavior:'smooth'});
@@ -640,6 +678,7 @@
 
       $("#contact-form").addEventListener("submit", saveContactFromForm);
       $("#btn-reset").addEventListener("click", clearContactForm);
+      $("#btn-cancel-contact").addEventListener("click", ()=> hideContactForm());
       $("#frequency").addEventListener("change", ()=>{
         const f=$("#frequency").value;
         $("#freqDays").value = (defaultDaysMap[f]||Number($("#freqDays").value||30));
@@ -693,7 +732,12 @@
       if (user) { una.classList.add("hidden"); aut.classList.remove("hidden"); $("#whoami").textContent = user.email; }
       else { una.classList.remove("hidden"); aut.classList.add("hidden"); }
     }
-    function clearUI(){ $("#today-list").innerHTML=""; $("#contact-list").innerHTML=""; $("#visit-list").innerHTML=""; }
+    function clearUI(){
+      $("#today-list").innerHTML="";
+      $("#contact-list").innerHTML="";
+      $("#visit-list").innerHTML="";
+      hideContactForm();
+    }
 
     let unsubscribeContacts = null;
     let unsubscribeVisits = null;
