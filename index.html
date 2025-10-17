@@ -52,6 +52,8 @@
     .compact-form .grid{gap:8px;}
     .compact-form .field label{margin:0 0 3px 2px;}
     .compact-form .field input,.compact-form .field select{padding:8px 10px;}
+    .form-header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 10px 0;flex-wrap:wrap;}
+    .form-header h3{margin:0;}
     .field input,.field select,.field textarea{width:100%}
     label{display:block;margin:0 0 5px 2px;font-weight:600}
     .grid{display:grid;grid-template-columns:1fr;gap:10px}
@@ -154,7 +156,10 @@
             <button type="button" id="btn-show-contact-form" class="chip strong">+ Add contact</button>
           </div>
           <div class="card compact-form hidden" id="contact-form-card">
-            <h3 id="form-title">Add Contact</h3>
+            <div class="form-header">
+              <h3 id="form-title">Add Contact</h3>
+              <button type="button" id="btn-cancel-contact" class="chip">Cancel</button>
+            </div>
             <form id="contact-form" onsubmit="event.preventDefault();return false;">
               <input type="hidden" id="contact-id" />
               <div class="grid">
@@ -174,7 +179,6 @@
                 <div class="col-12 row" style="justify-content:flex-start">
                   <button class="chip strong" type="submit" id="btn-save-contact">Save</button>
                   <button type="button" id="btn-reset" class="chip">Reset</button>
-                  <button type="button" id="btn-cancel-contact" class="chip">Cancel</button>
                   <span class="muted" style="margin-left:auto">Tip: set Frequency to Custom for exact days.</span>
                 </div>
               </div>
