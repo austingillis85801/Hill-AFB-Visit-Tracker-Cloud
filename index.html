@@ -282,6 +282,8 @@
     const $ = (sel) => document.querySelector(sel);
     let user = null;
     const defaultDaysMap = { Weekly:7, Biweekly:14, Monthly:30, Quarterly:90 };
+    let currentView = "view-today";
+    let contactFormOrigin = "view-contacts";
 
     function colPath(store){ return "users/" + (user ? user.uid : "NOUSER") + "/" + store; }
     function fmtDate(date){ if(!date) return ""; const d=new Date(date); return d.toLocaleDateString()+" "+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); }
@@ -369,8 +371,9 @@
 
       host.querySelectorAll(".btn-edit").forEach(btn=>btn.addEventListener("click", async e=>{
         const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id);
+        const origin = currentView;
         showSection("view-contacts");
-        populateContactForm(c);
+        populateContactForm(c, { origin });
         window.scrollTo({top:0, behavior:'smooth'});
       }));
       host.querySelectorAll(".btn-log-now").forEach(btn=>btn.addEventListener("click", async e=>{
@@ -378,7 +381,9 @@
       }));
     }
 
-    function showContactForm(){
+    function showContactForm(opts){
+      opts = opts || {};
+      contactFormOrigin = (opts.origin !== undefined ? opts.origin : currentView) || "view-contacts";
       $("#contact-form-card")?.classList.remove("hidden");
       $("#contact-form-placeholder")?.classList.add("hidden");
     }
@@ -388,10 +393,15 @@
       $("#contact-form-card")?.classList.add("hidden");
       $("#contact-form-placeholder")?.classList.remove("hidden");
       if (opts.reset !== false) clearContactForm();
+      if (opts.restoreView && contactFormOrigin && contactFormOrigin !== currentView){
+        showSection(contactFormOrigin);
+      }
+      contactFormOrigin = "view-contacts";
     }
 
-    function populateContactForm(c){
-      showContactForm();
+    function populateContactForm(c, opts){
+      opts = opts || {};
+      showContactForm({ origin: opts.origin });
       $("#form-title").textContent = (c && c.id) ? "Edit Contact" : "Add Contact";
       $("#contact-id").value = (c && c.id) ? c.id : "";
       $("#name").value = c?.name || "";
@@ -439,7 +449,7 @@
 
       host.querySelectorAll(".btn-edit").forEach(btn=>btn.addEventListener("click", async e=>{
         const id=e.currentTarget.getAttribute("data-id"); const c=await getByKey("contacts", id);
-        populateContactForm(c);
+        populateContactForm(c, { origin: currentView });
         window.scrollTo({top:0, behavior:'smooth'});
       }));
       host.querySelectorAll(".btn-log-now").forEach(btn=>btn.addEventListener("click", async e=>{
@@ -608,7 +618,11 @@
     }
 
     // ----- Views & wiring
-    function showSection(id){ ["view-today","view-contacts","view-log"].forEach(v=>document.getElementById(v).classList.add("hidden")); document.getElementById(id).classList.remove("hidden"); }
+    function showSection(id){
+      ["view-today","view-contacts","view-log"].forEach(v=>document.getElementById(v).classList.add("hidden"));
+      document.getElementById(id).classList.remove("hidden");
+      currentView = id;
+    }
 
     function attachClearableSearch(inputSel, buttonSel){
       const input = $(inputSel);
@@ -660,15 +674,17 @@
       $("#btn-show-log").addEventListener("click", ()=>{ showSection("view-log"); renderVisits(); });
 
       $("#btn-show-contact-form").addEventListener("click", ()=>{
+        const origin = currentView;
         showSection("view-contacts");
-        showContactForm();
+        showContactForm({ origin });
         clearContactForm();
         $("#name").focus();
       });
 
       $("#btn-add-quick").addEventListener("click", ()=>{
+        const origin = currentView;
         showSection("view-contacts");
-        showContactForm();
+        showContactForm({ origin });
         clearContactForm();
         $("#name").focus();
         window.scrollTo({top:0, behavior:'smooth'});
@@ -684,7 +700,7 @@
       $("#contact-form").addEventListener("submit", saveContactFromForm);
       $("#btn-reset").addEventListener("click", clearContactForm);
       document.querySelectorAll(".btn-cancel-contact").forEach(btn=>{
-        btn.addEventListener("click", ()=> hideContactForm());
+        btn.addEventListener("click", ()=> hideContactForm({ restoreView:true }));
       });
       $("#frequency").addEventListener("change", ()=>{
         const f=$("#frequency").value;
