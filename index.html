@@ -193,6 +193,7 @@
               <input id="contact-search" placeholder="Search contacts…" autocomplete="off" />
               <button type="button" id="btn-clear-contact-search" class="clear-input hidden" aria-label="Clear contact search">&times;</button>
             </div>
+            <button type="button" id="btn-toggle-archived" class="chip">Show archived</button>
           </div>
           <div id="contact-list"></div>
         </div>
@@ -285,6 +286,7 @@
     const defaultDaysMap = { Weekly:7, Biweekly:14, Monthly:30, Quarterly:90 };
     let currentView = "view-today";
     let contactFormOrigin = "view-contacts";
+    let showArchivedContacts = false;
 
     function colPath(store){ return "users/" + (user ? user.uid : "NOUSER") + "/" + store; }
     function fmtDate(date){ if(!date) return ""; const d=new Date(date); return d.toLocaleDateString()+" "+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); }
@@ -301,22 +303,28 @@
       return { nextDue, diffDays: diff, status };
     }
     function contactCardHTML(c, opts){
-      opts = opts || {}; const showArchive = !!opts.showArchive;
+      opts = opts || {};
+      const showArchive = !!opts.showArchive;
+      const showUnarchive = !!opts.showUnarchive;
+      const isArchived = !!opts.isArchived;
+      const statusLabel = c.status === "red" ? "Past due" : (c.status === "yellow" ? "Due this week" : "Not due");
       return '<div class="card '+c.status+'">\
         <div class="contact-row">\
           <div style="flex:1 1 auto;min-width:220px">\
             <h3>'+ (c.name||"") +'</h3>\
             <div class="muted">'+ ((c.org||"") + (c.org&&c.location?" • ":"") + (c.location||"")) +'</div>\
             <div class="meta-line" style="margin-top:6px">\
-              <span class="pill '+c.status+'">'+(c.status==="red"?"Past due":(c.status==="yellow"?"Due this week":"Not due"))+'</span>\
+              <span class="pill '+c.status+'">'+ statusLabel +'</span>\
               <span class="pill">Due: '+ fmtDateOnly(c.nextDue) +'</span>\
-              <span class="pill">Freq: '+ (c.frequency||"") + (c.frequency==="Custom"?" ("+c.freqDays+"d)":"") +'</span>\
-            </div>\
+              <span class="pill">Freq: '+ (c.frequency||"") + (c.frequency==="Custom"?" ("+c.freqDays+"d)":"") +'</span>' +
+              (isArchived ? ' <span class="pill">Archived</span>' : '') +
+            '</div>\
           </div>\
           <div class="contact-actions">\
             <button data-id="'+c.id+'" class="btn-ghost btn-log-now">Log</button>\
             <button data-id="'+c.id+'" class="btn-ghost btn-edit">Edit</button>' +
             (showArchive ? ' <button data-id="'+c.id+'" class="btn-ghost btn-archive">Archive</button>' : '') +
+            (showUnarchive ? ' <button data-id="'+c.id+'" class="btn-ghost btn-unarchive">Unarchive</button>' : '') +
           '</div>\
         </div>\
       </div>';
@@ -424,17 +432,31 @@
       $("#active").value = "true";
     }
 
+    function updateArchivedToggleUI(){
+      const btn = $("#btn-toggle-archived");
+      if (!btn) return;
+      btn.textContent = showArchivedContacts ? "Hide archived" : "Show archived";
+      btn.classList.toggle("strong", showArchivedContacts);
+    }
+
     async function renderContactsList(){
       const raw = ($("#contact-search")?.value || "").toLowerCase().trim();
       const tokens = raw.split(/\s+/).filter(Boolean);
 
       const contacts = (await getAll("contacts"))
-        .filter(c => c.active !== false)
-        .sort((a,b)=> (a.name||"").localeCompare(b.name||""));
+        .filter(c => showArchivedContacts ? true : c.active !== false)
+        .sort((a,b)=>{
+          const aIsArchived = a.active === false;
+          const bIsArchived = b.active === false;
+          if (aIsArchived !== bIsArchived) return aIsArchived ? 1 : -1;
+          return (a.name||"").localeCompare(b.name||"");
+        });
 
       const host = $("#contact-list"); host.innerHTML="";
+      updateArchivedToggleUI();
 
       contacts
+        .map(c => Object.assign({}, c, computeStatus(c)))
         .filter(c => {
           if (!tokens.length) return true;
           const hay = [c.name, c.org, c.location]
@@ -442,9 +464,13 @@
           return tokens.every(t => hay.includes(t));
         })
         .forEach(c=>{
-          const cmp = computeStatus(c);
+          const isArchived = c.active === false;
           const node=document.createElement("div");
-          node.innerHTML=contactCardHTML(Object.assign({}, c, cmp), {showArchive:true});
+          node.innerHTML=contactCardHTML(c, {
+            showArchive: !isArchived,
+            showUnarchive: showArchivedContacts && isArchived,
+            isArchived
+          });
           host.appendChild(node.firstChild);
         });
 
@@ -463,6 +489,14 @@
           const ok = confirm("Are you sure you want to remove this contact? This will archive them (hide from lists).");
           if (!ok) return;
           c.active=false; await putItem("contacts", c);
+          renderContactsList(); renderToday();
+        });
+      });
+      host.querySelectorAll(".btn-unarchive").forEach(btn=>{
+        btn.addEventListener("click", async e=>{
+          const id=e.currentTarget.getAttribute("data-id");
+          const c=await getByKey("contacts", id); if (!c) return;
+          c.active=true; await putItem("contacts", c);
           renderContactsList(); renderToday();
         });
       });
@@ -723,6 +757,11 @@
       $("#contact-search").addEventListener("input", renderContactsList);
       $("#contact-search").addEventListener("search", renderContactsList);
       $("#contact-search").addEventListener("keydown", (e)=>{ if (e.key === "Enter"){ e.preventDefault(); renderContactsList(); } });
+      $("#btn-toggle-archived").addEventListener("click", ()=>{
+        showArchivedContacts = !showArchivedContacts;
+        updateArchivedToggleUI();
+        renderContactsList();
+      });
 
       attachClearableSearch("#search", "#btn-clear-search");
       attachClearableSearch("#contact-search", "#btn-clear-contact-search");
