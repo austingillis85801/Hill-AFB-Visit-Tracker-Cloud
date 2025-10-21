@@ -58,6 +58,16 @@
     .form-header h3{margin:0;}
     .field input,.field select,.field textarea{width:100%}
     label{display:block;margin:0 0 5px 2px;font-weight:600}
+    .recent-visits-section{margin-top:12px;padding-top:12px;border-top:1px solid var(--border);}
+    .recent-visits-section h4{margin:0 0 6px 0;font-size:14px;}
+    .recent-visit-list{display:flex;flex-direction:column;gap:6px;}
+    .recent-visit-item{padding:6px 0;border-bottom:1px solid var(--border);}
+    .recent-visit-item:last-child{border-bottom:none;padding-bottom:0;}
+    .recent-visit-header{display:flex;justify-content:space-between;gap:8px;font-size:13px;}
+    .recent-visit-date{color:var(--muted);}
+    .recent-visit-outcome{font-weight:600;}
+    .recent-visit-notes{font-size:13px;color:var(--text);white-space:pre-wrap;margin-top:4px;}
+    .recent-visits-empty{font-size:13px;color:var(--muted);}
     .grid{display:grid;grid-template-columns:1fr;gap:10px}
     .col-4,.col-6,.col-8,.col-12{grid-column:span 1}
     @media (min-width:900px){
@@ -185,6 +195,10 @@
                 </div>
               </div>
             </form>
+            <div id="contact-recent-visits" class="recent-visits-section hidden">
+              <h4>Recent Visits</h4>
+              <div id="contact-recent-visits-list" class="recent-visit-list"></div>
+            </div>
           </div>
         </div>
         <div class="col-6">
@@ -285,6 +299,8 @@
     const defaultDaysMap = { Weekly:7, Biweekly:14, Monthly:30, Quarterly:90 };
     let currentView = "view-today";
     let contactFormOrigin = "view-contacts";
+    let visitCache = [];
+    let recentVisitsRequestToken = 0;
 
     function colPath(store){ return "users/" + (user ? user.uid : "NOUSER") + "/" + store; }
     function fmtDate(date){ if(!date) return ""; const d=new Date(date); return d.toLocaleDateString()+" "+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); }
@@ -413,6 +429,7 @@
       $("#lastVisit").value = c?.lastVisit ? fmtDateOnly(c.lastVisit) : "";
       $("#active").value = (c && c.active===false) ? "false" : "true";
       setTimeout(()=> $("#name")?.focus(), 0);
+      renderRecentVisitsForContact(c?.id || null);
     }
 
     function clearContactForm(){
@@ -422,6 +439,96 @@
       $("#frequency").value = "Monthly";
       $("#freqDays").value = 30;
       $("#active").value = "true";
+      renderRecentVisitsForContact(null);
+    }
+
+    async function getRecentVisitsForContact(contactId, limit){
+      if (!contactId || !user) return [];
+      let visits = Array.isArray(visitCache) && visitCache.length ? visitCache.slice() : null;
+      if (!visits){
+        try {
+          const all = await getAll("visits");
+          visits = Array.isArray(all) ? all.slice() : [];
+          visitCache = visits.slice().sort((a,b)=> new Date(b.visitDate||0) - new Date(a.visitDate||0));
+          visits = visitCache.slice();
+        } catch (err){
+          err.__recentVisitsOffline = !navigator.onLine;
+          throw err;
+        }
+      }
+      const sorted = (visits||[])
+        .filter(v => v && v.contactId === contactId)
+        .sort((a,b)=> new Date(b.visitDate||0) - new Date(a.visitDate||0));
+      return limit ? sorted.slice(0, limit) : sorted;
+    }
+
+    async function renderRecentVisitsForContact(contactId){
+      const wrap = document.getElementById("contact-recent-visits");
+      const list = document.getElementById("contact-recent-visits-list");
+      if (!wrap || !list) return;
+      if (!contactId){
+        recentVisitsRequestToken++;
+        wrap.classList.add("hidden");
+        list.innerHTML = "";
+        return;
+      }
+      wrap.classList.remove("hidden");
+      const token = ++recentVisitsRequestToken;
+      const setMessage = (msg)=>{
+        list.innerHTML = "";
+        const div = document.createElement("div");
+        div.className = "recent-visits-empty";
+        div.textContent = msg;
+        list.appendChild(div);
+      };
+      if (!user){
+        setMessage("Sign in to view visits.");
+        return;
+      }
+      setMessage("Loading…");
+      try {
+        const visits = await getRecentVisitsForContact(contactId, 5);
+        if (token !== recentVisitsRequestToken) return;
+        if (!visits.length){
+          const offline = !navigator.onLine && (!visitCache || !visitCache.length);
+          setMessage(offline ? "Offline. Recent visits unavailable." : "No visits logged yet.");
+          return;
+        }
+        list.innerHTML = "";
+        visits.forEach(v=>{
+          const item = document.createElement("div");
+          item.className = "recent-visit-item";
+
+          const header = document.createElement("div");
+          header.className = "recent-visit-header";
+
+          const dateSpan = document.createElement("span");
+          dateSpan.className = "recent-visit-date";
+          dateSpan.textContent = fmtDate(v.visitDate) || "Unknown date";
+
+          const outcomeSpan = document.createElement("span");
+          outcomeSpan.className = "recent-visit-outcome";
+          outcomeSpan.textContent = v?.outcome || "—";
+
+          header.appendChild(dateSpan);
+          header.appendChild(outcomeSpan);
+          item.appendChild(header);
+
+          if (v?.notes){
+            const notesDiv = document.createElement("div");
+            notesDiv.className = "recent-visit-notes";
+            notesDiv.textContent = v.notes;
+            item.appendChild(notesDiv);
+          }
+
+          list.appendChild(item);
+        });
+      } catch (err){
+        if (token !== recentVisitsRequestToken) return;
+        console.error("Recent visits lookup failed", err);
+        const offline = !navigator.onLine || err.__recentVisitsOffline;
+        setMessage(offline ? "Offline. Recent visits unavailable." : "Unable to load recent visits.");
+      }
     }
 
     async function renderContactsList(){
@@ -471,12 +578,14 @@
     async function renderVisits(){
       const q=$("#visit-search").value?.toLowerCase().trim()||"";
       const [contacts, visitsSnap] = await Promise.all([getAll("contacts"), db.collection(colPath("visits")).get()]);
-      const visits = visitsSnap.docs.map(d=>Object.assign({id:d.id}, d.data()));
+      const visitsRaw = visitsSnap.docs.map(d=>Object.assign({id:d.id}, d.data()));
+      const sortedVisits = visitsRaw.slice().sort((a,b)=> new Date(b.visitDate||0) - new Date(a.visitDate||0));
+      visitCache = sortedVisits.slice();
       const nameById = {}; contacts.forEach(c=> nameById[c.id]=c.name);
-      const filtered = visits.filter(v=>{
+      const filtered = sortedVisits.filter(v=>{
         const hay=((nameById[v.contactId]||"")+" "+(v.notes||"")+" "+(v.nextSteps||"")+" "+(v.outcome||"")).toLowerCase();
         return !q || hay.includes(q);
-      }).sort((a,b)=> new Date(b.visitDate) - new Date(a.visitDate));
+      });
       const host=$("#visit-list"); host.innerHTML="";
       filtered.forEach(v=>{
         const div=document.createElement("div"); div.innerHTML =
@@ -493,6 +602,8 @@
           </div>';
         host.appendChild(div.firstChild);
       });
+      const editingId = $("#contact-id")?.value;
+      if (editingId) renderRecentVisitsForContact(editingId);
     }
 
     async function saveContactFromForm(e){
