@@ -81,6 +81,10 @@
     @media (min-width:600px){ #today-list,#contact-list{grid-template-columns:1fr 1fr} }
     @media (min-width:1100px){ #today-list,#contact-list{grid-template-columns:1fr 1fr 1fr} }
     .footer{margin-top:16px;color:var(--muted);font-size:12px}
+    #sw-update-toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--blue);color:#fff;padding:12px 18px;border-radius:999px;box-shadow:0 10px 30px rgba(31,111,235,.28);display:flex;align-items:center;gap:12px;z-index:30;max-width:90%;font-size:14px}
+    #sw-update-toast .sw-update-text{flex:1 1 auto}
+    #sw-update-toast .sw-update-reload{background:#fff;color:var(--blue);border:1px solid #fff;border-radius:999px;padding:6px 14px;font-weight:600;cursor:pointer}
+    #sw-update-toast .sw-update-reload:focus{outline:2px solid rgba(255,255,255,.8);outline-offset:2px}
   </style>
 
   <!-- CSV parser -->
@@ -238,6 +242,60 @@
   <!-- Register the service worker (cache-bust with v16) -->
   <script>
     if ('serviceWorker' in navigator) {
+      let swUpdateToast = null;
+      const SW_VERSION_KEY = 'sw-active-version';
+      let lastSeenVersion = '';
+      let hadController = !!navigator.serviceWorker.controller;
+      try {
+        lastSeenVersion = localStorage.getItem(SW_VERSION_KEY) || '';
+      } catch (_) {}
+
+      const showSwUpdateToast = (version) => {
+        if (!swUpdateToast) {
+          swUpdateToast = document.createElement('div');
+          swUpdateToast.id = 'sw-update-toast';
+          swUpdateToast.setAttribute('role', 'status');
+          swUpdateToast.setAttribute('aria-live', 'polite');
+          swUpdateToast.innerHTML = '<span class="sw-update-text"></span><button type="button" class="sw-update-reload">Reload now</button>';
+          document.body.appendChild(swUpdateToast);
+          swUpdateToast.querySelector('.sw-update-reload')?.addEventListener('click', () => {
+            try {
+              navigator.serviceWorker.controller?.postMessage('SKIP_WAITING');
+            } catch (_) {}
+            location.reload();
+          });
+        }
+        const textNode = swUpdateToast.querySelector('.sw-update-text');
+        if (textNode) {
+          textNode.textContent = version ? `Version ${version} is ready. Reload to update.` : 'A new version is ready. Reload to update.';
+        }
+      };
+
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        const data = event.data;
+        if (!hadController) {
+          hadController = true;
+          if (data && typeof data === 'object' && data.type === 'SW_ACTIVATED' && data.version) {
+            lastSeenVersion = data.version;
+            try {
+              localStorage.setItem(SW_VERSION_KEY, data.version);
+            } catch (_) {}
+          }
+          return;
+        }
+        if (data && typeof data === 'object' && data.type === 'SW_ACTIVATED') {
+          if (data.version) {
+            const previousVersion = lastSeenVersion;
+            if (data.version === lastSeenVersion) return;
+            lastSeenVersion = data.version;
+            try {
+              localStorage.setItem(SW_VERSION_KEY, data.version);
+            } catch (_) {}
+          }
+          showSwUpdateToast(data.version);
+        }
+      });
+
       window.addEventListener('load', function() {
         navigator.serviceWorker.register('sw.js?v=16');
       });

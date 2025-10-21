@@ -52,6 +52,8 @@ self.addEventListener('activate', (event) => {
       return Promise.resolve();
     }));
     await self.clients.claim();
+    const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    clients.forEach(client => client.postMessage({ type: 'SW_ACTIVATED', version: VERSION }));
   })());
 });
 
