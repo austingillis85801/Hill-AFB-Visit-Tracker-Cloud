@@ -46,6 +46,7 @@ Publish.
 - **Offline-first**: Firestore caches in the browser (IndexedDB). You can use it offline; changes sync later.
 - **Real-time sync**: Changes on phone are pushed to the cloud and appear on iPad within seconds.
 - **Export/Import** still works for manual backups or migration.
+- **CSV exports**: When signed in, use **Export contacts CSV** or **Export visits CSV** in the top-right toolbar to download spreadsheet-friendly backups with human-readable dates.
 
 ## Notes
 - If you used the local-only app before, data does **not** auto-migrate. Do a one-time **Export** from the old app and **Import JSON** here after signing in.
