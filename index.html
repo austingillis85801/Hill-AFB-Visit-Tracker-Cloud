@@ -113,6 +113,8 @@
       <div class="right row authbar hidden" id="authbar-authed">
         <span id="whoami" class="whoami"></span>
         <button id="btn-export" class="chip">Export</button>
+        <button id="btn-export-contacts-csv" class="chip">Export contacts CSV</button>
+        <button id="btn-export-visits-csv" class="chip">Export visits CSV</button>
         <button id="btn-import-json" class="chip">Import JSON</button>
         <button id="btn-import-csv" class="chip">Import CSV</button>
         <input id="import-json-file" type="file" accept="application/json" class="hidden" />
@@ -600,15 +602,96 @@
       sel.innerHTML='<option value="">— Select —</option>'+contacts.map(c=>'<option value="'+c.id+'">'+c.name+'</option>').join("");
     }
 
-    async function exportJSON(){
+    async function fetchExportData(){
       const [contactsSnap, visitsSnap] = await Promise.all([
         db.collection(colPath("contacts")).get(),
         db.collection(colPath("visits")).get()
       ]);
       const contacts = contactsSnap.docs.map(d=>Object.assign({id:d.id}, d.data()));
       const visits = visitsSnap.docs.map(d=>Object.assign({id:d.id}, d.data()));
+      return { contacts, visits };
+    }
+
+    function triggerDownloadFromBlob(blob, filename){
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    function csvEscape(value){
+      if (value === null || value === undefined) return "";
+      const str = String(value);
+      if (/[",\n]/.test(str)) return '"' + str.replace(/"/g, '""') + '"';
+      return str;
+    }
+
+    function buildCsv(rows, columns){
+      const header = columns.map(col => csvEscape(col.header)).join(",");
+      const lines = rows.map(row => columns.map(col => csvEscape(col.value(row))).join(","));
+      return [header].concat(lines).join("\n");
+    }
+
+    function formatCsvDate(value){
+      if (!value) return "";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return String(value);
+      return date.toLocaleString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    }
+
+    async function exportJSON(){
+      if (!user){ alert("Sign in first."); return; }
+      const { contacts, visits } = await fetchExportData();
       const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), contacts, visits }, null, 2)], {type:"application/json"});
-      const a = document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="visit-tracker-backup.json"; a.click(); URL.revokeObjectURL(a.href);
+      triggerDownloadFromBlob(blob, "visit-tracker-backup.json");
+    }
+
+    async function exportContactsCSV(){
+      if (!user){ alert("Sign in first."); return; }
+      const { contacts } = await fetchExportData();
+      const columns = [
+        { header: "Contact ID", value: row => row.id || "" },
+        { header: "Name", value: row => row.name || "" },
+        { header: "Org", value: row => row.org || "" },
+        { header: "Location", value: row => row.location || "" },
+        { header: "Email", value: row => row.email || "" },
+        { header: "Phone", value: row => row.phone || "" },
+        { header: "Frequency", value: row => row.frequency || "" },
+        { header: "Frequency (days)", value: row => row.freqDays != null ? row.freqDays : "" },
+        { header: "Last Visit", value: row => formatCsvDate(row.lastVisit) },
+        { header: "Active", value: row => row.active === false ? "No" : "Yes" },
+        { header: "Notes", value: row => row.notes || "" }
+      ];
+      const csv = buildCsv(contacts, columns);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      triggerDownloadFromBlob(blob, "contacts-export.csv");
+    }
+
+    async function exportVisitsCSV(){
+      if (!user){ alert("Sign in first."); return; }
+      const { contacts, visits } = await fetchExportData();
+      const contactsById = {};
+      contacts.forEach(contact => { contactsById[contact.id] = contact; });
+      const columns = [
+        { header: "Visit ID", value: row => row.id || "" },
+        { header: "Contact ID", value: row => row.contactId || "" },
+        { header: "Contact Name", value: row => (contactsById[row.contactId]?.name) || "" },
+        { header: "Visit Date", value: row => formatCsvDate(row.visitDate) },
+        { header: "Outcome", value: row => row.outcome || "" },
+        { header: "Next Steps", value: row => row.nextSteps || "" },
+        { header: "Notes", value: row => row.notes || "" },
+        { header: "Created By", value: row => row.createdBy || "" }
+      ];
+      const csv = buildCsv(visits, columns);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      triggerDownloadFromBlob(blob, "visits-export.csv");
     }
     async function importJSON(file){
       const text=await file.text(); const data=JSON.parse(text);
@@ -750,6 +833,8 @@
       });
 
       $("#btn-export").addEventListener("click", exportJSON);
+      $("#btn-export-contacts-csv").addEventListener("click", exportContactsCSV);
+      $("#btn-export-visits-csv").addEventListener("click", exportVisitsCSV);
       $("#btn-import-json").addEventListener("click", ()=> $("#import-json-file").click());
       $("#import-json-file").addEventListener("change", (e)=>{ if(e.target.files[0]) importJSON(e.target.files[0]); });
 
