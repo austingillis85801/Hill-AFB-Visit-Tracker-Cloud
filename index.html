@@ -116,6 +116,7 @@
         <input id="auth-email" placeholder="email" autocapitalize="off" autocomplete="username" />
         <input id="auth-pass" placeholder="password" type="password" autocomplete="current-password" />
         <button id="btn-signin" class="chip">Sign in</button>
+        <button id="btn-forgot" class="chip" type="button">Forgot password?</button>
         <button id="btn-signup" class="chip">Create</button>
       </div>
 
@@ -996,6 +997,26 @@
       $("#btn-signin").addEventListener("click", (e)=>{ e.preventDefault(); signin(); });
       $("#auth-email").addEventListener("keydown", (e)=>{ if(e.key==="Enter"){ e.preventDefault(); signin(); } });
       $("#auth-pass").addEventListener("keydown", (e)=>{ if(e.key==="Enter"){ e.preventDefault(); signin(); } });
+
+      $("#btn-forgot").addEventListener("click", async ()=>{
+        const email = $("#auth-email").value.trim();
+        const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!email){ alert("Please enter your email address first."); return; }
+        if (!emailPattern.test(email)){ alert("Please enter a valid email address."); return; }
+        const btn = $("#btn-forgot");
+        const originalText = btn.textContent;
+        try {
+          btn.disabled = true;
+          btn.textContent = "Sending…";
+          await auth.sendPasswordResetEmail(email);
+          alert("Password reset email sent. Check your inbox.");
+        } catch (e) {
+          alert("Reset failed: " + (e.message || e));
+        } finally {
+          btn.disabled = false;
+          btn.textContent = originalText;
+        }
+      });
 
       $("#btn-signup").addEventListener("click", async ()=>{
         const email=$("#auth-email").value.trim(); const pass=$("#auth-pass").value;
