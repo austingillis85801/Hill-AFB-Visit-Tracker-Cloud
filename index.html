@@ -83,7 +83,7 @@
     .contact-row{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
     .contact-actions{display:flex;gap:6px;flex-wrap:wrap}
     .pill{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--border);background:#fff;display:inline-block}
-    .pill.red{border-color:var(--red);color:var(--red)} .pill.yellow{border-color:var(--yellow);color:var(--yellow)} .pill.green{border-color:var(--green);color:var(--green)}
+    .pill.red{border-color:var(--red);color:var(--red)} .pill.yellow{border-color:var(--yellow);color:var(--yellow)} .pill.green{border-color:var(--green);color:var(--green)} .pill.archived{border-color:var(--muted);color:var(--muted)}
     .meta-line{display:flex;gap:6px;align-items:center;flex-wrap:nowrap;overflow:auto;scrollbar-width:none}
     .meta-line::-webkit-scrollbar{display:none}
     .btn-ghost{background:#fff;border:1px solid var(--border);border-radius:999px;padding:7px 14px;cursor:pointer}
@@ -214,6 +214,7 @@
               <input id="contact-search" placeholder="Search contacts…" autocomplete="off" />
               <button type="button" id="btn-clear-contact-search" class="clear-input hidden" aria-label="Clear contact search">&times;</button>
             </div>
+            <button type="button" id="toggle-archived" class="chip" aria-pressed="false">Show archived</button>
           </div>
           <div id="contact-list"></div>
         </div>
@@ -362,6 +363,7 @@
     let contactFormOrigin = "view-contacts";
     let visitCache = [];
     let recentVisitsRequestToken = 0;
+    let showArchivedContacts = false;
 
     function colPath(store){ return "users/" + (user ? user.uid : "NOUSER") + "/" + store; }
     function fmtDate(date){ if(!date) return ""; const d=new Date(date); return d.toLocaleDateString()+" "+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); }
@@ -378,7 +380,13 @@
       return { nextDue, diffDays: diff, status };
     }
     function contactCardHTML(c, opts){
-      opts = opts || {}; const showArchive = !!opts.showArchive;
+      opts = opts || {};
+      const showArchive = !!opts.showArchive;
+      const showUnarchive = !!opts.showUnarchive;
+      const isArchived = !!opts.isArchived;
+      const archiveBtn = showArchive ? ' <button data-id="'+c.id+'" class="btn-ghost btn-archive">Archive</button>' : '';
+      const unarchiveBtn = showUnarchive ? ' <button data-id="'+c.id+'" class="btn-ghost btn-unarchive">Unarchive</button>' : '';
+      const archivedPill = isArchived ? ' <span class="pill archived">Archived</span>' : '';
       return '<div class="card '+c.status+'">\
         <div class="contact-row">\
           <div style="flex:1 1 auto;min-width:220px">\
@@ -387,14 +395,13 @@
             <div class="meta-line" style="margin-top:6px">\
               <span class="pill '+c.status+'">'+(c.status==="red"?"Past due":(c.status==="yellow"?"Due this week":"Not due"))+'</span>\
               <span class="pill">Due: '+ fmtDateOnly(c.nextDue) +'</span>\
-              <span class="pill">Freq: '+ (c.frequency||"") + (c.frequency==="Custom"?" ("+c.freqDays+"d)":"") +'</span>\
+              <span class="pill">Freq: '+ (c.frequency||"") + (c.frequency==="Custom"?" ("+c.freqDays+"d)":"") +'</span>' + archivedPill + '\
             </div>\
           </div>\
           <div class="contact-actions">\
             <button data-id="'+c.id+'" class="btn-ghost btn-log-now">Log</button>\
-            <button data-id="'+c.id+'" class="btn-ghost btn-edit">Edit</button>' +
-            (showArchive ? ' <button data-id="'+c.id+'" class="btn-ghost btn-archive">Archive</button>' : '') +
-          '</div>\
+            <button data-id="'+c.id+'" class="btn-ghost btn-edit">Edit</button>' + archiveBtn + unarchiveBtn + '\
+          </div>\
         </div>\
       </div>';
     }
@@ -596,9 +603,21 @@
       const raw = ($("#contact-search")?.value || "").toLowerCase().trim();
       const tokens = raw.split(/\s+/).filter(Boolean);
 
+      const toggleBtn = $("#toggle-archived");
+      if (toggleBtn){
+        toggleBtn.textContent = showArchivedContacts ? "Hide archived" : "Show archived";
+        toggleBtn.classList.toggle("strong", showArchivedContacts);
+        toggleBtn.setAttribute("aria-pressed", showArchivedContacts ? "true" : "false");
+      }
+
       const contacts = (await getAll("contacts"))
-        .filter(c => c.active !== false)
-        .sort((a,b)=> (a.name||"").localeCompare(b.name||""));
+        .filter(c => showArchivedContacts || c.active !== false)
+        .sort((a,b)=>{
+          const aActive = a.active !== false;
+          const bActive = b.active !== false;
+          if (aActive !== bActive) return aActive ? -1 : 1;
+          return (a.name||"").localeCompare(b.name||"");
+        });
 
       const host = $("#contact-list"); host.innerHTML="";
 
@@ -612,7 +631,11 @@
         .forEach(c=>{
           const cmp = computeStatus(c);
           const node=document.createElement("div");
-          node.innerHTML=contactCardHTML(Object.assign({}, c, cmp), {showArchive:true});
+          node.innerHTML=contactCardHTML(Object.assign({}, c, cmp), {
+            showArchive: c.active !== false,
+            showUnarchive: c.active === false,
+            isArchived: c.active === false
+          });
           host.appendChild(node.firstChild);
         });
 
@@ -631,6 +654,14 @@
           const ok = confirm("Are you sure you want to remove this contact? This will archive them (hide from lists).");
           if (!ok) return;
           c.active=false; await putItem("contacts", c);
+          renderContactsList(); renderToday();
+        });
+      });
+      host.querySelectorAll(".btn-unarchive").forEach(btn=>{
+        btn.addEventListener("click", async e=>{
+          const id=e.currentTarget.getAttribute("data-id");
+          const c=await getByKey("contacts", id); if (!c) return;
+          c.active=true; await putItem("contacts", c);
           renderContactsList(); renderToday();
         });
       });
@@ -978,6 +1009,10 @@
       $("#contact-search").addEventListener("input", renderContactsList);
       $("#contact-search").addEventListener("search", renderContactsList);
       $("#contact-search").addEventListener("keydown", (e)=>{ if (e.key === "Enter"){ e.preventDefault(); renderContactsList(); } });
+      $("#toggle-archived")?.addEventListener("click", ()=>{
+        showArchivedContacts = !showArchivedContacts;
+        renderContactsList();
+      });
 
       attachClearableSearch("#search", "#btn-clear-search");
       attachClearableSearch("#contact-search", "#btn-clear-contact-search");
@@ -1036,6 +1071,13 @@
       $("#contact-list").innerHTML="";
       $("#visit-list").innerHTML="";
       hideContactForm();
+      showArchivedContacts = false;
+      const toggleBtn = $("#toggle-archived");
+      if (toggleBtn){
+        toggleBtn.textContent = "Show archived";
+        toggleBtn.classList.remove("strong");
+        toggleBtn.setAttribute("aria-pressed", "false");
+      }
     }
 
     let unsubscribeContacts = null;
