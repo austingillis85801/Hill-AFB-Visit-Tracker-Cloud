@@ -364,6 +364,32 @@
     let visitCache = [];
     let recentVisitsRequestToken = 0;
     let showArchivedContacts = false;
+    const dataCache = { contacts: [], visits: [] };
+
+    function cloneRecord(record){ return record ? Object.assign({}, record) : record; }
+    function cacheArray(store){ if (!Array.isArray(dataCache[store])) dataCache[store] = []; return dataCache[store]; }
+    function setCache(store, records){
+      dataCache[store] = Array.isArray(records) ? records.map(cloneRecord) : [];
+      if (store === "visits"){
+        visitCache = dataCache[store].slice().sort((a,b)=> new Date(b.visitDate||0) - new Date(a.visitDate||0));
+      }
+    }
+    function upsertCache(store, record){
+      if (!record) return;
+      const arr = cacheArray(store);
+      const copy = cloneRecord(record);
+      const idx = arr.findIndex(item => item.id === copy.id);
+      if (idx >= 0) arr[idx] = copy; else arr.push(copy);
+      if (store === "visits"){
+        visitCache = arr.slice().sort((a,b)=> new Date(b.visitDate||0) - new Date(a.visitDate||0));
+      }
+    }
+    function getCachedRecords(store){ return Array.isArray(dataCache[store]) ? dataCache[store].map(cloneRecord) : []; }
+    function getCachedRecordById(store, id){
+      if (!Array.isArray(dataCache[store])) return null;
+      const found = dataCache[store].find(item => item.id === id);
+      return found ? cloneRecord(found) : null;
+    }
 
     function colPath(store){ return "users/" + (user ? user.uid : "NOUSER") + "/" + store; }
     function fmtDate(date){ if(!date) return ""; const d=new Date(date); return d.toLocaleDateString()+" "+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); }
@@ -410,24 +436,74 @@
     async function addItem(store, value){
       if (!user) throw new Error("Sign in first");
       const ref = await db.collection(colPath(store)).add(value);
-      await db.collection(colPath(store)).doc(ref.id).set(Object.assign({}, value, { id: ref.id }), { merge:true });
+      const withId = Object.assign({ id: ref.id }, value);
+      await db.collection(colPath(store)).doc(ref.id).set(withId, { merge:true });
+      upsertCache(store, withId);
       return ref.id;
     }
     async function putItem(store, value){
       if (!user) throw new Error("Sign in first");
       const id = value.id || (await addItem(store, value));
       if (!value.id) return id;
-      await db.collection(colPath(store)).doc(id).set(value, { merge:true });
+      const copy = Object.assign({}, value, { id });
+      await db.collection(colPath(store)).doc(id).set(copy, { merge:true });
+      upsertCache(store, copy);
       return id;
     }
     async function getAll(store){
       if (!user) return [];
-      const snap = await db.collection(colPath(store)).get();
-      return snap.docs.map(d => { const v=d.data(); v.id=d.id; return v; });
+      const colRef = db.collection(colPath(store));
+      const useCache = !navigator.onLine;
+      try {
+        const snap = await (useCache ? colRef.get({ source: "cache" }) : colRef.get());
+        const rows = snap.docs.map(d => { const v=d.data(); v.id=d.id; return v; });
+        setCache(store, rows);
+        return rows.map(cloneRecord);
+      } catch (err) {
+        if (!useCache){
+          try {
+            const snap = await colRef.get({ source: "cache" });
+            const rows = snap.docs.map(d => { const v=d.data(); v.id=d.id; return v; });
+            setCache(store, rows);
+            return rows.map(cloneRecord);
+          } catch (_) {
+            const cached = getCachedRecords(store);
+            if (cached.length) return cached;
+            throw err;
+          }
+        }
+        const cached = getCachedRecords(store);
+        if (cached.length) return cached;
+        throw err;
+      }
     }
     async function getByKey(store, id){
-      const docRef = await db.collection(colPath(store)).doc(id).get();
-      return docRef.exists ? Object.assign({id: docRef.id}, docRef.data()) : null;
+      const docRef = db.collection(colPath(store)).doc(id);
+      const useCache = !navigator.onLine;
+      try {
+        const snap = await (useCache ? docRef.get({ source: "cache" }) : docRef.get());
+        if (!snap.exists) return null;
+        const value = Object.assign({ id: snap.id }, snap.data());
+        upsertCache(store, value);
+        return cloneRecord(value);
+      } catch (err) {
+        if (!useCache){
+          try {
+            const snap = await docRef.get({ source: "cache" });
+            if (!snap.exists) return null;
+            const value = Object.assign({ id: snap.id }, snap.data());
+            upsertCache(store, value);
+            return cloneRecord(value);
+          } catch (_) {
+            const cached = getCachedRecordById(store, id);
+            if (cached) return cached;
+            throw err;
+          }
+        }
+        const cached = getCachedRecordById(store, id);
+        if (cached) return cached;
+        throw err;
+      }
     }
 
     // ----- Renderers
@@ -669,8 +745,7 @@
 
     async function renderVisits(){
       const q=$("#visit-search").value?.toLowerCase().trim()||"";
-      const [contacts, visitsSnap] = await Promise.all([getAll("contacts"), db.collection(colPath("visits")).get()]);
-      const visitsRaw = visitsSnap.docs.map(d=>Object.assign({id:d.id}, d.data()));
+      const [contacts, visitsRaw] = await Promise.all([getAll("contacts"), getAll("visits")]);
       const sortedVisits = visitsRaw.slice().sort((a,b)=> new Date(b.visitDate||0) - new Date(a.visitDate||0));
       visitCache = sortedVisits.slice();
       const nameById = {}; contacts.forEach(c=> nameById[c.id]=c.name);
@@ -1101,11 +1176,17 @@
       auth.onAuthStateChanged((u)=>{
         user=u||null; updateAuthUI();
         if(user){
+          dataCache.contacts = [];
+          dataCache.visits = [];
+          visitCache = [];
           subscribeRealtime();
           loadAllAndRender();
         } else {
           if (typeof unsubscribeContacts === "function") { unsubscribeContacts(); unsubscribeContacts = null; }
           if (typeof unsubscribeVisits === "function") { unsubscribeVisits(); unsubscribeVisits = null; }
+          dataCache.contacts = [];
+          dataCache.visits = [];
+          visitCache = [];
           clearUI();
         }
       });
